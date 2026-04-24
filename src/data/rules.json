@@ -1,126 +1,190 @@
 {
-  "watchlist": [
-    "CL1!"
-  ],
+  "watchlist": ["CL1!"],
   "default_timeframe": "4H",
   "strategy": {
-    "name": "CRUDE INTENTIONS \u2014 EMA Stack + RSI Reset + FVG Confluence",
-    "version": "1.3",
+    "name": "CRUDE INTENTIONS — EMA Stack + RSI Reset + FVG Confluence",
+    "version": "1.4",
     "instrument": "WTI Crude Oil Futures (CL)",
     "exchange": "CME via Apex Trader Funding",
     "tick_value": 10.0,
     "tick_size": 0.01,
-    "description": "Three-layer confluence system. EMA stack defines trend regime. RSI reset confirms momentum exhaustion on pullback. FVG or key level provides structural entry point. All three layers must align. A+ confluence score minimum 6/8 before any entry fires. When in doubt \u2014 NO TRADE."
+    "description": "Four-layer confluence system. EMA stack defines trend regime. RSI reset confirms momentum exhaustion on pullback. FVG or key level provides structural entry point. VWAP and HTF structure provide volume and macro context. All layers must align. A+ confluence score minimum 7/10 before any entry fires. When in doubt — NO TRADE."
   },
   "indicators": {
     "ema_20": "Primary trend direction. Price pulling back to EMA20 in uptrend = long setup zone. Price rallying to EMA20 in downtrend = short setup zone.",
     "ema_50": "Intermediate trend confirmation. EMA20 > EMA50 = uptrend. EMA20 < EMA50 = downtrend. Mixed = no trade.",
     "ema_200": "Long-term regime filter. All EMAs stacked in same direction = highest conviction. EMA200 slope defines the macro tide.",
-    "rsi_14": "Entry timing on 4H. 35-55 on pullback in uptrend = momentum reset, snap-back likely. 45-65 on rally in downtrend = momentum exhausted, rejection likely. Not just oversold/overbought \u2014 divergence matters.",
+    "rsi_14": "Entry timing on 4H. 35-55 on pullback in uptrend = momentum reset, snap-back likely. 45-65 on rally in downtrend = momentum exhausted, rejection likely. Not just oversold/overbought — divergence matters.",
     "fvg": "Fair Value Gap zones. Unfilled 4H FVGs act as price magnets. Fresh gaps (under 25 bars) outperform old gaps. Gap + EMA + round level = triple confluence.",
+    "vwap": "Volume-Weighted Average Price. Price above VWAP = institutional buyers in control. Price below VWAP = sellers in control. Long setups require price above VWAP or bouncing off VWAP from below. Short setups require price below VWAP or rejecting VWAP from above. VWAP + EMA20 confluence = highest conviction entry zone.",
+    "htf_structure": "Higher Timeframe (Daily/Weekly) support and resistance levels. Entry must not be within 0.50 of a major HTF resistance level on longs, or HTF support level on shorts. A 4H pullback into EMA20 that is also sitting on a clean daily support is A+. The same setup approaching a weekly resistance ceiling is a problem — note and reduce size or skip.",
     "ovx": "Crude Oil Volatility Index. OVX > 35 = high vol regime, size down and widen stops. OVX > 50 = extreme, consider no trade.",
     "dxy": "US Dollar Index. CL and DXY are inversely correlated. Rising DXY = headwind for CL longs. Falling DXY = tailwind.",
     "session": "Trading session. NY open (9:30 AM - 12:00 PM ET) and London (3:00 - 11:00 AM ET) produce cleanest CL setups. Asia session = avoid new entries."
   },
   "bias_criteria": {
     "bullish": [
-      "EMA20 > EMA50 AND EMA50 > EMA200 \u2014 full uptrend stack",
+      "EMA20 > EMA50 AND EMA50 > EMA200 — full uptrend stack",
       "Price above EMA20 on 4H",
+      "Price above VWAP — institutional buyers in control",
       "DXY in downtrend or neutral",
-      "OVX below 35 \u2014 manageable volatility regime"
+      "OVX below 35 — manageable volatility regime",
+      "No major HTF resistance within 0.50 above price"
     ],
     "bearish": [
-      "EMA20 < EMA50 AND EMA50 < EMA200 \u2014 full downtrend stack",
+      "EMA20 < EMA50 AND EMA50 < EMA200 — full downtrend stack",
       "Price below EMA20 on 4H",
+      "Price below VWAP — sellers in control",
       "DXY in uptrend",
-      "OVX below 35 \u2014 manageable volatility regime"
+      "OVX below 35 — manageable volatility regime",
+      "No major HTF support within 0.50 below price"
     ],
     "neutral": [
-      "EMA stack mixed \u2014 EMA20 between EMA50 and EMA200",
-      "Price chopping through EMA20 repeatedly",
+      "EMA stack mixed — EMA20 between EMA50 and EMA200",
+      "Price chopping through EMA20 and VWAP repeatedly",
       "EIA week with no clear directional setup",
-      "OVX above 50 \u2014 extreme volatility, stand aside"
+      "OVX above 50 — extreme volatility, stand aside",
+      "Price pinned between HTF support and resistance with no room to run"
     ]
   },
   "entry_rules": {
     "long": [
-      "EMA20 > EMA50 > EMA200 \u2014 uptrend stack confirmed on 4H",
-      "RSI between 35-55 \u2014 pullback momentum reset, not oversold",
+      "EMA20 > EMA50 > EMA200 — uptrend stack confirmed on 4H",
+      "RSI between 35-55 — pullback momentum reset, not oversold",
       "Price at or within 0.20 of EMA20 or unfilled bullish FVG zone",
+      "Price at or above VWAP — or bouncing off VWAP as dynamic support",
+      "No major daily/weekly resistance within 0.50 above entry",
       "Session is NY open (9:30 AM - 12 PM ET) or London (3 AM - 11 AM ET)",
       "NOT within 3 hours of EIA release (Wednesday 10:30 AM ET)",
-      "A+ confluence score 6 or higher out of 8"
+      "A+ confluence score 7 or higher out of 10"
     ],
     "short": [
-      "EMA20 < EMA50 < EMA200 \u2014 downtrend stack confirmed on 4H",
-      "RSI between 45-65 \u2014 rally reset, not overbought",
+      "EMA20 < EMA50 < EMA200 — downtrend stack confirmed on 4H",
+      "RSI between 45-65 — rally reset, not overbought",
       "Price at or within 0.20 of EMA20 or unfilled bearish FVG zone",
+      "Price at or below VWAP — or rejecting VWAP as dynamic resistance",
+      "No major daily/weekly support within 0.50 below entry",
       "Session is NY open (9:30 AM - 12 PM ET) or London (3 AM - 11 AM ET)",
       "NOT within 3 hours of EIA release (Wednesday 10:30 AM ET)",
-      "A+ confluence score 6 or higher out of 8"
+      "A+ confluence score 7 or higher out of 10"
     ]
   },
   "aplus_checklist": {
-    "description": "Score 1 point for each. Minimum 6/8 to take the trade.",
+    "description": "Score 1 point for each. Minimum 7/10 to take the trade. 10/10 = full size. 7-8/10 = standard size. Below 7 = NO TRADE.",
     "layer_1_trend": [
-      "4H EMA stack aligned \u2014 EMA20/50/200 all pointing same direction",
-      "Daily chart confirms \u2014 daily trend agrees with 4H bias"
+      "4H EMA stack aligned — EMA20/50/200 all pointing same direction",
+      "Daily chart confirms — daily trend agrees with 4H bias"
     ],
     "layer_2_momentum": [
-      "RSI in reset zone \u2014 35-55 for longs, 45-65 for shorts",
-      "MACD confirming \u2014 histogram turning in direction of trade"
+      "RSI in reset zone — 35-55 for longs, 45-65 for shorts",
+      "MACD confirming — histogram turning in direction of trade"
     ],
     "layer_3_structure": [
-      "Price at key level \u2014 EMA20, FVG zone, or round dollar level",
-      "Risk/reward valid \u2014 minimum 2:1 to first target"
+      "Price at key level — EMA20, FVG zone, or round dollar level",
+      "Risk/reward valid — minimum 2:1 to first target"
     ],
     "layer_4_confirmation": [
-      "Session timing \u2014 NY open or London, not Asia",
-      "EIA window clear \u2014 not within 3 hours of Wednesday 10:30 AM ET"
+      "Session timing — NY open or London, not Asia",
+      "EIA window clear — not within 3 hours of Wednesday 10:30 AM ET"
+    ],
+    "layer_5_context": [
+      "VWAP aligned — price above VWAP for longs, below for shorts. OR price bouncing off VWAP as dynamic support/resistance at entry zone",
+      "HTF structure clear — no major daily or weekly S/R level within 0.50 that would cap the trade before first target is reached"
     ],
     "scoring": {
-      "7_8": "A+ \u2014 Full size, take the trade",
-      "6_8": "A  \u2014 Standard size, take the trade",
-      "4_5": "B  \u2014 Half size or skip",
-      "0_3": "F  \u2014 NO TRADE, wait for better setup"
-    }
+      "10_10": "A+ — Full size, highest conviction, take the trade",
+      "8_9": "A  — Standard size, take the trade",
+      "7_10": "B+ — Standard to half size, take the trade if other factors clean",
+      "5_6": "B  — Half size or skip — wait for better alignment",
+      "0_4": "F  — NO TRADE — wait for better setup"
+    },
+    "minimum_to_trade": 7,
+    "total_points": 10
+  },
+  "vwap_rules": {
+    "description": "VWAP usage rules for CL 4H setups",
+    "long_rules": [
+      "PASS: Price is above VWAP at time of entry evaluation",
+      "PASS: Price has pulled back to VWAP and is showing rejection (pin bar, engulfing) at VWAP level",
+      "CONDITIONAL: Price is slightly below VWAP but VWAP is sloping upward and converging with EMA20 — note and reduce conviction",
+      "FAIL: Price is well below VWAP with no sign of reclamation — do not fight the institutional order flow"
+    ],
+    "short_rules": [
+      "PASS: Price is below VWAP at time of entry evaluation",
+      "PASS: Price has rallied to VWAP and is showing rejection (pin bar, engulfing) at VWAP level",
+      "CONDITIONAL: Price is slightly above VWAP but VWAP is sloping downward and converging with EMA20 — note and reduce conviction",
+      "FAIL: Price is well above VWAP — do not fade strong institutional buying"
+    ],
+    "confluence_notes": [
+      "VWAP + EMA20 within 0.15 of each other = extremely high conviction entry zone",
+      "VWAP + FVG overlap = institutional level with structural gap — highest priority",
+      "VWAP rejection on volume spike = strongest signal — confirms institutional participation"
+    ]
+  },
+  "htf_structure_rules": {
+    "description": "Higher timeframe level rules — daily and weekly S/R must be checked before entry",
+    "how_to_identify": [
+      "Daily swing highs and lows from the last 20 sessions",
+      "Weekly open, high, low, close levels",
+      "Prior consolidation zones (3+ daily candles in same range)",
+      "Round dollar levels ($75, $76, $77... etc) — always note these",
+      "Prior FVG zones on the daily chart — unfilled daily FVGs are magnets"
+    ],
+    "long_rules": [
+      "PASS: Entry is at or above a clear daily support level — adds conviction",
+      "PASS: No major daily or weekly resistance within 0.50 above entry",
+      "CONDITIONAL: Daily resistance 0.50-1.00 above entry — note and ensure R/R still valid to first target before that level",
+      "FAIL: Major weekly or daily resistance within 0.50 above entry — trade is capped, skip or wait for breakout"
+    ],
+    "short_rules": [
+      "PASS: Entry is at or below a clear daily resistance level — adds conviction",
+      "PASS: No major daily or weekly support within 0.50 below entry",
+      "CONDITIONAL: Daily support 0.50-1.00 below entry — note and ensure R/R still valid to first target before that level",
+      "FAIL: Major weekly or daily support within 0.50 below entry — trade is floored, skip or wait for breakdown"
+    ]
   },
   "exit_rules": [
-    "Take profit 1: 1.5R from entry \u2014 move stop to breakeven after hitting",
-    "Take profit 2: 2.5R from entry \u2014 trail stop behind EMA20",
+    "Take profit 1: 1.5R from entry — move stop to breakeven after hitting",
+    "Take profit 2: 2.5R from entry — trail stop behind EMA20",
     "Stop loss: 5 ticks beyond FVG zone bottom (longs) or top (shorts)",
-    "Hard stop maximum: 40 ticks ($400/contract) \u2014 never exceed",
+    "Hard stop maximum: 40 ticks ($400/contract) — never exceed",
     "Time-based: close before EIA window if trade is open on Wednesday morning",
-    "Invalidation exit: if price closes 4H candle on wrong side of EMA20 \u2014 close immediately"
+    "Invalidation exit: if price closes 4H candle on wrong side of EMA20 — close immediately",
+    "VWAP invalidation: if price closes 4H candle decisively on wrong side of VWAP — reassess and consider closing"
   ],
   "fvg_rules": {
     "description": "Fair Value Gap hierarchy and trading rules",
     "gap_hierarchy": [
       "4H FVG stronger than 1H FVG",
       "FVG at round dollar level ($78, $79, $80) = highest priority",
+      "FVG that coincides with VWAP = institutional + structural confluence = A+ zone",
+      "FVG at daily S/R level = HTF + structural confluence = A+ zone",
       "Fresh gap under 25 bars > old gap over 75 bars",
       "Large gap over 0.30 > small gap under 0.10"
     ],
     "entry_conditions": [
       "Price approaching unfilled FVG from outside",
-      "Gap must be unmitigated \u2014 price has not traded through it since creation",
+      "Gap must be unmitigated — price has not traded through it since creation",
       "Prefer gaps where candle 1 and candle 3 show clear institutional participation",
-      "Enter at top of bearish FVG (longs) or bottom of bullish FVG (shorts)"
+      "Enter at top of bearish FVG (longs) or bottom of bullish FVG (shorts)",
+      "Highest conviction: FVG + EMA20 + VWAP all within 0.20 of each other"
     ],
     "invalidation": [
-      "Gap fully filled and price continues through \u2014 wait for next gap",
-      "Gap older than 100 bars \u2014 reduce confidence weighting",
-      "Conflicting FVG in same direction within 0.50 \u2014 wait for clarity"
+      "Gap fully filled and price continues through — wait for next gap",
+      "Gap older than 100 bars — reduce confidence weighting",
+      "Conflicting FVG in same direction within 0.50 — wait for clarity"
     ]
   },
   "risk_rules": [
-    "Maximum 1% of Apex account per trade \u2014 hard rule, no exceptions",
-    "CL tick value $10 per 0.01 move \u2014 20-tick stop = $200/contract",
+    "Maximum 1% of Apex account per trade — hard rule, no exceptions",
+    "CL tick value $10 per 0.01 move — 20-tick stop = $200/contract",
     "Default stop: 25 ticks ($250/contract)",
-    "Size DOWN when OVX > 35 \u2014 reduce to half normal contracts",
-    "Size DOWN when trading against daily trend \u2014 reduce to half",
+    "Size DOWN when OVX > 35 — reduce to half normal contracts",
+    "Size DOWN when trading against daily trend — reduce to half",
+    "Size DOWN when score is 7/10 — standard to half size only",
+    "Full size only at 9-10/10 score with VWAP and HTF both passing",
     "Maximum 3 trades per day on CL",
-    "No trading after 3 consecutive losses \u2014 60 minute mandatory pause",
+    "No trading after 3 consecutive losses — 60 minute mandatory pause",
     "No trading after Apex daily loss limit is 80% reached",
     "Never hold through EIA without intentional size reduction",
     "Never add to a losing position",
@@ -128,21 +192,23 @@
   ],
   "session_rules": {
     "preferred": {
-      "london_open": "3:00 AM - 11:00 AM ET \u2014 clean directional moves, good FVG fills",
-      "ny_open": "9:30 AM - 12:00 PM ET \u2014 highest volume, best momentum setups"
+      "london_open": "3:00 AM - 11:00 AM ET — clean directional moves, good FVG fills",
+      "ny_open": "9:30 AM - 12:00 PM ET — highest volume, best momentum setups, VWAP most reliable"
     },
     "avoid": {
-      "asia": "Before 3:00 AM ET \u2014 low volume, choppy, fake breakouts",
-      "lunch": "12:00 PM - 1:30 PM ET \u2014 low volume, avoid new entries",
-      "eia_window": "Wednesday 7:30 AM - 1:30 PM ET \u2014 extreme volatility risk"
+      "asia": "Before 3:00 AM ET — low volume, choppy, fake breakouts, VWAP unreliable",
+      "lunch": "12:00 PM - 1:30 PM ET — low volume, avoid new entries",
+      "eia_window": "Wednesday 7:30 AM - 1:30 PM ET — extreme volatility risk"
     }
   },
   "macro_filters": {
     "weekly_bias": "Run market-environment-strategist agent every Sunday 8 PM ET",
     "eia_protocol": "Run Prompt 4 every Wednesday at 10:35 AM ET after data drops",
     "cot_protocol": "Run Prompt 7 every Friday after COT data releases",
-    "ovx_check": "Check OVX before every session \u2014 size rules above apply",
-    "dxy_check": "Check DXY trend before any CL long \u2014 headwind or tailwind?"
+    "ovx_check": "Check OVX before every session — size rules above apply",
+    "dxy_check": "Check DXY trend before any CL long — headwind or tailwind?",
+    "vwap_check": "Note VWAP level at session open — is price above or below? Sets the directional bias for the session.",
+    "htf_check": "Mark daily swing highs/lows and weekly levels on chart every Sunday — update if a major level is breached during the week"
   },
   "key_events": {
     "eia_inventory": {
@@ -157,22 +223,22 @@
     },
     "fomc": {
       "when": "Per calendar",
-      "impact": "HIGH \u2014 DXY spike risk",
+      "impact": "HIGH — DXY spike risk",
       "rule": "Go flat or reduce size day of decision"
     },
     "cpi": {
       "when": "Per calendar",
-      "impact": "HIGH \u2014 inflation = crude demand driver",
+      "impact": "HIGH — inflation = crude demand driver",
       "rule": "No new entries within 2 hours of release"
     },
     "opec_meeting": {
       "when": "Per OPEC schedule",
-      "impact": "VERY HIGH \u2014 supply shock risk",
+      "impact": "VERY HIGH — supply shock risk",
       "rule": "No new entries day before or day of"
     }
   },
   "apex_compliance": {
-    "_description": "Apex 4.0 compliance and pre-trade drawdown shield. These rules run BEFORE the A+ checklist \u2014 a perfect setup still gets blocked if the account cannot survive the worst-case path.",
+    "_description": "Apex 4.0 compliance and pre-trade drawdown shield. These rules run BEFORE the A+ checklist — a perfect setup still gets blocked if the account cannot survive the worst-case path.",
     "account_reference": {
       "account_size": 100000,
       "trailing_drawdown": 3000,
@@ -185,99 +251,78 @@
       "cutoff_warning_ET": "16:30"
     },
     "drawdown_shield": {
-      "_concept": "Before entering any trade, calculate the worst-case drawdown path \u2014 not just this trade but the sequence of trades that could follow. The account must be able to absorb the full worst-case chain without breaching MLL.",
+      "_concept": "Before entering any trade, calculate the worst-case drawdown path — not just this trade but the sequence of trades that could follow. The account must be able to absorb the full worst-case chain without breaching MLL.",
       "step_1_current_cushion": {
         "formula": "cushion = current_balance - MLL",
-        "example": "Balance $99,200, MLL $97,000 \u2192 cushion = $2,200",
-        "note": "MLL trails upward with peak balance (EOD model) \u2014 recalculate after every session close"
+        "example": "Balance $99,200, MLL $97,000 → cushion = $2,200",
+        "note": "MLL trails upward with peak balance (EOD model) — recalculate after every session close"
       },
       "step_2_worst_case_trade_risk": {
         "formula": "worst_case_loss = contracts * stop_ticks * $10 + slippage_buffer",
         "slippage_buffer_ticks": 3,
-        "example": "1 contract, 25-tick stop \u2192 $250 + $30 slippage = $280 worst case",
+        "example": "1 contract, 25-tick stop → $250 + $30 slippage = $280 worst case",
         "note": "Always use your hard stop, not your intended stop. CL gaps through levels."
       },
       "step_3_consecutive_loss_exposure": {
-        "_concept": "The real Apex killer is not one losing trade \u2014 it is 3-4 consecutive losses eroding the cushion to breach territory. Calculate how many max-stop losses your current cushion can absorb.",
+        "_concept": "The real Apex killer is not one losing trade — it is 3-4 consecutive losses eroding the cushion to breach territory.",
         "formula": "trades_to_breach = floor(cushion / worst_case_loss_per_trade)",
         "thresholds": {
-          "5_or_more": "GREEN \u2014 full normal sizing, proceed if setup qualifies",
-          "3_to_4": "YELLOW \u2014 reduce to half size, tighten stop criteria, no B-grade setups",
-          "2": "ORANGE \u2014 minimum size only (1 contract), A+ setups only (7/8 minimum), no countertrend",
-          "1": "RED \u2014 DO NOT TRADE. One max-stop loss ends the account. Stand aside until session reset or account rebuild.",
-          "0": "BREACH IMMINENT \u2014 account is already at or below MLL. Stop trading immediately."
-        },
-        "worked_example": {
-          "balance": 98500,
-          "mll": 97000,
-          "cushion": 1500,
-          "worst_case_per_trade": 280,
-          "trades_to_breach": 5,
-          "status": "GREEN \u2014 5 losses before breach, proceed normally"
-        },
-        "worked_example_tight": {
-          "balance": 97600,
-          "mll": 97000,
-          "cushion": 600,
-          "worst_case_per_trade": 280,
-          "trades_to_breach": 2,
-          "status": "ORANGE \u2014 2 losses before breach, minimum size A+ only"
+          "5_or_more": "GREEN — full normal sizing, proceed if setup qualifies",
+          "3_to_4": "YELLOW — reduce to half size, tighten stop criteria, no B-grade setups",
+          "2": "ORANGE — minimum size only (1 contract), A+ setups only (8/10 minimum), no countertrend",
+          "1": "RED — DO NOT TRADE. One max-stop loss ends the account. Stand aside until session reset or account rebuild.",
+          "0": "BREACH IMMINENT — account is already at or below MLL. Stop trading immediately."
         }
       },
       "step_4_daily_loss_limit_remaining": {
-        "_concept": "EOD accounts have a session circuit breaker. Track daily PnL separately from the cushion calculation \u2014 hitting DLL locks you out for the day but does not kill the account.",
+        "_concept": "EOD accounts have a session circuit breaker. Track daily PnL separately from the cushion calculation.",
         "formula": "dll_remaining = daily_loss_limit - abs(todays_realized_losses)",
         "dll_100k_eod": 1500,
         "thresholds": {
-          "above_1000": "GREEN \u2014 full day available",
-          "500_to_1000": "YELLOW \u2014 size down, no more than 1 contract per trade",
-          "under_500": "RED \u2014 stand aside, not worth risking the day session lock",
-          "at_limit": "LOCKED \u2014 no new entries until next session"
-        },
-        "note": "DLL and cushion are separate calculations. Both must pass GREEN or YELLOW before entry."
+          "above_1000": "GREEN — full day available",
+          "500_to_1000": "YELLOW — size down, no more than 1 contract per trade",
+          "under_500": "RED — stand aside, not worth risking the day session lock",
+          "at_limit": "LOCKED — no new entries until next session"
+        }
       },
       "step_5_time_of_day_decay": {
-        "_concept": "Risk profile changes as the session approaches the 4:59 PM ET cutoff. A trade entered at 2 PM with a 25-tick stop has 3 hours to work. The same trade at 4:15 PM has 44 minutes \u2014 CL may not resolve cleanly and forced close risk rises.",
         "cutoff_rules": {
-          "before_1430_ET": "Normal trading window \u2014 full rules apply",
-          "1430_to_1600_ET": "Late session \u2014 reduce size by half, only highest conviction setups, target must be achievable before 4:45 PM",
-          "1600_to_1630_ET": "WARNING zone \u2014 no new entries unless already in a winning trade managing exit",
-          "after_1630_ET": "HARD BLOCK \u2014 no new entries under any circumstances. Manage existing positions to close only."
-        },
-        "forced_close_risk": "If a CL trade is open at 4:55 PM and moves against you, Apex auto-close at 4:59 PM may fill at a worse price than your stop \u2014 this counts against your cushion AND your DLL simultaneously"
+          "before_1430_ET": "Normal trading window — full rules apply",
+          "1430_to_1600_ET": "Late session — reduce size by half, only highest conviction setups",
+          "1600_to_1630_ET": "WARNING zone — no new entries unless already in a winning trade managing exit",
+          "after_1630_ET": "HARD BLOCK — no new entries under any circumstances."
+        }
       },
       "step_6_compounded_position_check": {
-        "_concept": "If you already have an open position, any new entry compounds your total account exposure. The cushion check must account for BOTH positions going max-stop simultaneously.",
         "rule": "Total open risk across all positions must never exceed 50% of current cushion",
-        "example": "Cushion $2,000 \u2192 max total open risk = $1,000 across all contracts",
-        "note": "This prevents the scenario where two simultaneous CL positions both hit stops on an EIA spike"
+        "example": "Cushion $2,000 → max total open risk = $1,000 across all contracts"
       }
     },
     "pre_trade_gate_sequence": {
       "_description": "Run in this order before any entry. A BLOCK at any step = NO TRADE regardless of setup quality.",
       "gate_1": "Is current_balance above MLL + $500 buffer? (BLOCK if no)",
-      "gate_2": "Calculate trades_to_breach \u2014 is it 2 or above? (BLOCK if 1 or 0)",
+      "gate_2": "Calculate trades_to_breach — is it 2 or above? (BLOCK if 1 or 0)",
       "gate_3": "Is DLL remaining above $500? (BLOCK if no, EOD accounts only)",
       "gate_4": "Is current time before 4:30 PM ET? (BLOCK if no)",
       "gate_5": "Does total open risk (existing + new) stay under 50% of cushion? (BLOCK if no)",
-      "gate_6": "Is trades_to_breach 3 or less? (REDUCE SIZE to 1 contract and require 7/8 A+ minimum)",
-      "gate_7": "Run A+ confluence checklist \u2014 minimum 6/8 to proceed",
-      "gate_8": "Run Prompt 11 adversarial scanner \u2014 PASS or CONDITIONAL PASS required"
+      "gate_6": "Is trades_to_breach 3 or less? (REDUCE SIZE to 1 contract and require 8/10 minimum)",
+      "gate_7": "Run A+ confluence checklist — minimum 7/10 to proceed",
+      "gate_8": "Run Prompt 11 adversarial scanner — PASS or CONDITIONAL PASS required"
     },
     "mll_tracking": {
       "eod_model": "MLL updates once per day at market close based on peak closing balance",
       "record_keeping": "Log balance and MLL every session close in trade_ledger.db",
-      "after_profit_day": "If today's close sets a new balance high \u2192 MLL moves up overnight \u2192 recalculate cushion next morning",
-      "after_loss_day": "MLL does not move down \u2014 cushion shrinks by exactly the day's loss",
-      "never_assume": "Always verify current MLL before session open \u2014 do not rely on memory"
+      "after_profit_day": "If today's close sets a new balance high → MLL moves up overnight → recalculate cushion next morning",
+      "after_loss_day": "MLL does not move down — cushion shrinks by exactly the day's loss",
+      "never_assume": "Always verify current MLL before session open — do not rely on memory"
     },
     "legacy_rules": {
-      "daily_loss_limit": "Respect at all times \u2014 system halts at 80% of limit",
-      "max_contracts": "Size per vol-targeting formula (position_sizing section) \u2014 never exceed contract limits",
-      "no_revenge_trading": "After a stop out \u2014 wait minimum 30 minutes before re-analyzing",
-      "no_averaging_down": "If stopped out, the setup is invalidated \u2014 wait for a new one",
-      "consistency_rule": "Same rules every day \u2014 no exception for obvious setups"
+      "daily_loss_limit": "Respect at all times — system halts at 80% of limit",
+      "max_contracts": "Size per vol-targeting formula — never exceed contract limits",
+      "no_revenge_trading": "After a stop out — wait minimum 30 minutes before re-analyzing",
+      "no_averaging_down": "If stopped out, the setup is invalidated — wait for a new one",
+      "consistency_rule": "Same rules every day — no exception for obvious setups"
     }
   },
-  "notes": "v1.3 \u2014 Replaced thin apex_compliance with full Drawdown Shield system: 6-step pre-trade gate sequence, consecutive loss exposure calculator, DLL tracking, time-of-day decay, compounded position check. v1.2 \u2014 FVG gap status. v1.1 \u2014 vol-targeting position sizing."
+  "notes": "v1.4 — Added VWAP alignment and HTF structure as Layer 5 of the A+ checklist. Expanded checklist from 8 to 10 points. Raised minimum to trade from 6/8 to 7/10. Updated entry rules, bias criteria, FVG hierarchy, and risk rules to incorporate VWAP and HTF context. Added vwap_rules and htf_structure_rules sections. v1.3 — Full Drawdown Shield system. v1.2 — FVG gap status. v1.1 — vol-targeting position sizing."
 }
