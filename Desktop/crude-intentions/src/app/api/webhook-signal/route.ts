@@ -1,188 +1,126 @@
-/**
- * CRUDE INTENTIONS — /api/webhook-signal
- *
- * Receives a verified, pre-validated signal from the Railway webhook server.
- * Runs ALFRED analysis on it automatically and stores the result.
- *
- * This route is NOT called directly by TradingView — it is only called by Railway
- * after HMAC verification and payload validation have passed.
- *
- * File location: /app/api/webhook-signal/route.ts
- */
-
-import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { NextRequest, NextResponse } from 'next/server';
+import Anthropic from '@anthropic-ai/sdk';
+import { writeJournalEntry } from '@/lib/journal/writer';
+import { scoreToConfidence } from '@/lib/alfred/confidence';
+import { AdversarialScanSchema } from '@/lib/validation/journal-schema';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
-// ── Internal key guard ────────────────────────────────────────────────────────
-// Only Railway can call this endpoint — it must send the INTERNAL_API_KEY header
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY;
 
-// ── Updated system prompt for v1.8 MTF architecture ──────────────────────────
-const SYSTEM_PROMPT = `You are CRUDE INTENTIONS v1.8, an AI trading research assistant for WTI crude oil futures (CL) on Apex Trader Funding.
+const ALFRED_SYSTEM_PROMPT = `You are ALFRED the analysis engine for CRUDE INTENTIONS v1.8.
+Score CL futures setups against a 5-layer 10-point A+ checklist.
+3-TF architecture: Daily/Weekly macro bias -> 4H setup zone -> 15min entry trigger.
+MINIMUM TO TRADE: 7/10. COUNTERTREND MINIMUM: 9/10.
+Layer 1 [Daily/Weekly 2pts]: ema_stack_aligned, daily_confirms
+Layer 2 [4H Momentum 2pts]: rsi_reset_zone (35-55 longs 45-65 shorts), macd_confirming
+Layer 3 [Structure 2pts]: price_at_key_level (inside 4H FVG or EMA20), rr_valid (2:1 min)
+Layer 4 [HTF Context 2pts]: session_timing (NY Open 9:30-11:45 ET), eia_window_clear
+Layer 5 [15min Trigger 2pts]: vwap_aligned, htf_structure_clear
+HARD BLOCKS: EIA window active, OVX>50
+GRADING: 10=A+ 8-9=A 7=B+ 5-6=B 0-4=F
+CONFIDENCE: 10->CONVICTION 8-9->HIGH 7->MEDIUM <=6->LOW
+Output ONLY valid JSON no prose no markdown.
+SCHEMA: {"score":<0-10>,"grade":"A+"|"A"|"B+"|"B"|"F","decision":"LONG"|"SHORT"|"NO TRADE","confidence_label":"CONVICTION"|"HIGH"|"MEDIUM"|"LOW","checklist":[{"label":"EMA Stack Aligned","result":"PASS"|"FAIL","detail":"string"},{"label":"Daily Confirms","result":"PASS"|"FAIL","detail":"string"},{"label":"RSI Reset Zone","result":"PASS"|"FAIL","detail":"string"},{"label":"MACD Confirming","result":"PASS"|"FAIL","detail":"string"},{"label":"Price at Key Level","result":"PASS"|"FAIL","detail":"string"},{"label":"R/R Valid","result":"PASS"|"FAIL","detail":"string"},{"label":"Session Timing","result":"PASS"|"FAIL","detail":"string"},{"label":"EIA Window Clear","result":"PASS"|"FAIL","detail":"string"},{"label":"VWAP Aligned","result":"PASS"|"FAIL","detail":"string"},{"label":"HTF Structure Clear","result":"PASS"|"FAIL","detail":"string"}],"blocked_reasons":[],"wait_for":null,"reasoning":"2-3 sentences","disclaimer":"AI-generated research only. You are responsible for all trading decisions."}`;
 
-You score setups against the three-timeframe A+ checklist (10 points, minimum 7/10 to trade).
+const ADVERSARIAL_SYSTEM_PROMPT = `You are an adversarial trading analyst. Find every reason to SKIP this CL futures trade.
+Check: trend alignment, FVG quality, RSI context, macro event timing, OVX regime, R:R after slippage, recency bias, score honesty.
+Verdict: PASS (no red flags), CONDITIONAL_PASS (valid if condition met), SKIP (disqualifying red flag found).
+Output ONLY valid JSON: {"verdict":"PASS"|"CONDITIONAL_PASS"|"SKIP","concerns":["string"],"override_note":null}`;
 
-THREE-TIMEFRAME ARCHITECTURE:
-- Daily/Weekly = Macro bias layer (which direction are we trading?)
-- 4H           = Setup identification layer (where are the FVG and EMA zones?)
-- 15min        = Entry trigger layer (has the candle confirmed inside the zone?)
-
-A+ CHECKLIST — score 1 point each, minimum 7/10 to trade:
-
-Layer 1 — Macro Bias [DAILY/WEEKLY] (2 pts):
-  1. Daily EMA stack aligned (EMA20/50/200 all pointing in trade direction on daily chart)
-  2. Weekly bias confirms (weekly-bias is LONG for longs, SHORT for shorts — not NEUTRAL)
-
-Layer 2 — Setup Zone [4H] (2 pts):
-  3. 4H EMA stack aligned (EMA20/50/200 intermediate trend confirms daily bias)
-  4. Price inside mapped 4H setup zone (at EMA20, inside unfilled FVG, or VWAP confluence)
-
-Layer 3 — Momentum [4H] (2 pts):
-  5. 4H RSI in reset zone (35-55 for longs on pullback, 45-65 for shorts on rally)
-  6. 4H MACD histogram turning in trade direction (actively turning, not just positive/negative)
-
-Layer 4 — Structure [4H + DAILY] (2 pts):
-  7. HTF structure clear (no major daily/weekly S/R within 0.50 capping the trade)
-  8. Risk/reward valid (minimum 2:1 from 15min entry to first target using 15min stop)
-
-Layer 5 — Entry Trigger [15MIN] (2 pts):
-  9. 15min trigger candle confirmed (closed inside 4H zone showing rejection: pin bar, engulfing, or reclaim)
-  10. 15min VWAP aligned (reclaiming VWAP on trigger candle for longs, rejecting for shorts) AND session is NY Open or London exception
-
-EIA HARD BLOCK: Wednesday 7:30 AM - 1:30 PM ET. A perfect 10/10 setup = NO TRADE during this window. Override all other checks.
-
-GRADING:
-  10/10 = A+ — Full size, take the trade
-  8-9/10 = A  — Standard size, take the trade
-  7/10  = B+ — Standard to half size, take the trade if other factors clean
-  5-6/10 = B  — Half size or skip
-  0-4/10 = F  — NO TRADE
-
-STOP PLACEMENT (v1.8):
-- Place stop below the low of the 15min trigger candle (longs) or above the high (shorts)
-- Minimum stop: 15 ticks to absorb spread and noise
-- Hard maximum: 40 ticks ($400/contract) — never exceed
-
-OVX REGIME: OVX > 35 = size down. OVX > 50 = consider NO TRADE.
-DXY: Rising DXY = headwind for CL longs. Falling = tailwind.
-WEEKLY BIAS: If weekly_bias is NEUTRAL, countertrend trades require 9+/10 minimum.
-
-You output ONLY valid JSON — no prose preamble, no markdown fences.
-
-Return this exact JSON schema:
-{
-  "score": number (0-10),
-  "grade": "A+" | "A" | "B+" | "B" | "F",
-  "decision": "LONG" | "SHORT" | "NO TRADE",
-  "checklist": [
-    {"label": "Daily EMA Stack", "timeframe": "Daily", "result": "PASS" | "FAIL" | "UNKNOWN", "detail": "brief explanation"},
-    {"label": "Weekly Bias Confirms", "timeframe": "Weekly", "result": "PASS" | "FAIL" | "UNKNOWN", "detail": "brief explanation"},
-    {"label": "4H EMA Stack", "timeframe": "4H", "result": "PASS" | "FAIL", "detail": "brief explanation"},
-    {"label": "Price in Setup Zone", "timeframe": "4H", "result": "PASS" | "FAIL", "detail": "brief explanation"},
-    {"label": "RSI Reset Zone", "timeframe": "4H", "result": "PASS" | "FAIL", "detail": "brief explanation"},
-    {"label": "MACD Confirming", "timeframe": "4H", "result": "PASS" | "FAIL", "detail": "brief explanation"},
-    {"label": "HTF Structure Clear", "timeframe": "Daily", "result": "PASS" | "FAIL", "detail": "brief explanation"},
-    {"label": "R/R Valid (15min stop)", "timeframe": "15min", "result": "PASS" | "FAIL", "detail": "brief explanation"},
-    {"label": "15min Trigger Candle", "timeframe": "15min", "result": "PASS" | "FAIL", "detail": "brief explanation"},
-    {"label": "15min VWAP + Session", "timeframe": "15min", "result": "PASS" | "FAIL", "detail": "brief explanation"}
-  ],
-  "suggested_stop": number | null,
-  "suggested_entry": number | null,
-  "blocked_reasons": [],
-  "wait_for": null | "string describing what to wait for",
-  "reasoning": "2-3 sentence analysis of the setup across all three timeframes",
-  "timeframe_summary": {
-    "daily_weekly": "one sentence on macro bias state",
-    "four_hour": "one sentence on setup zone quality",
-    "fifteen_min": "one sentence on trigger quality"
-  },
-  "disclaimer": "This is AI-generated analysis for research purposes only. You are responsible for all trading decisions."
-}`;
-
-
-function buildUserPrompt(signal: Record<string, unknown>): string {
-  return `Analyze this CL futures setup — signal received from TradingView 15min trigger:
-
-── MACRO BIAS (Daily/Weekly) ──
-Weekly Bias: ${signal.weekly_bias || "unknown"}
-Daily EMA Stack: ${signal.daily_ema_stack || "unknown"}
-
-── SETUP ZONE (4H) ──
-Price: ${signal.price}
-EMA20: ${signal.ema20} | EMA50: ${signal.ema50} | EMA200: ${signal.ema200}
-RSI 14 (4H): ${signal.rsi}
-MACD Histogram (4H): ${signal.macd}
-FVG: Direction=${signal.fvg}, Top=${signal.fvg_top ?? "N/A"}, Bottom=${signal.fvg_bottom ?? "N/A"}, Age=${signal.fvg_age ?? "N/A"} bars
-VWAP: ${signal.vwap ?? "not provided"}
-Nearest HTF Resistance: ${signal.htf_resistance ?? "not provided"}
-Nearest HTF Support: ${signal.htf_support ?? "not provided"}
-OVX: ${signal.ovx}
-DXY Trend: ${signal.dxy}
-
-── ENTRY TRIGGER (15min) ──
-Trigger Candle Type: ${signal.trigger_candle}
-Trigger Candle Low: ${signal.trigger_candle_low ?? "not provided"} (stop reference for longs)
-Trigger Candle High: ${signal.trigger_candle_high ?? "not provided"} (stop reference for shorts)
-Direction Signal: ${signal.direction}
-Session: ${signal.session}
-MTF Alignment Score: ${signal.mtf_score ?? "not provided"} / 3
-
-Score this setup against the v1.8 A+ checklist (10 points). Return JSON only.`;
+interface WebhookSignal {
+  direction: 'LONG'|'SHORT'; price: number; ema20: number; ema50: number; ema200: number;
+  rsi: number; macd?: number; vwap?: number; ovx: number; dxy: string;
+  fvg_direction: string; fvg_top: number; fvg_bottom: number; fvg_age?: number;
+  session: 'NY_OPEN'|'NY_AFTERNOON'|'LONDON'|'OVERLAP'|'ASIA'|'OFF_HOURS';
+  weekly_bias?: string; htf_resistance?: number; htf_support?: number; eia_active: boolean;
+}
+interface ChecklistItem { label: string; result: 'PASS'|'FAIL'; detail: string; }
+interface AlfredResult {
+  score: number; grade: string; decision: 'LONG'|'SHORT'|'NO TRADE';
+  confidence_label: string; checklist: ChecklistItem[];
+  blocked_reasons: string[]; wait_for: string|null; reasoning: string; disclaimer: string;
 }
 
+async function runALFRED(signal: WebhookSignal): Promise<AlfredResult> {
+  const prompt = `Analyze this CL setup against v1.8 checklist:
+Direction: ${signal.direction} | Price: ${signal.price}
+EMA20: ${signal.ema20} EMA50: ${signal.ema50} EMA200: ${signal.ema200}
+RSI: ${signal.rsi} | MACD: ${signal.macd??'N/A'} | VWAP: ${signal.vwap??'N/A'}
+OVX: ${signal.ovx} | DXY: ${signal.dxy}
+FVG: ${signal.fvg_direction} ${signal.fvg_bottom}-${signal.fvg_top} age=${signal.fvg_age??'?'}bars
+Session: ${signal.session} | Weekly bias: ${signal.weekly_bias??'not set'}
+HTF Resistance: ${signal.htf_resistance??'N/A'} | HTF Support: ${signal.htf_support??'N/A'}
+EIA active: ${signal.eia_active?'YES HARD BLOCK':'NO'}
+Return JSON only.`;
+  const res = await client.messages.create({ model:'claude-sonnet-4-20250514', max_tokens:1000, system:ALFRED_SYSTEM_PROMPT, messages:[{role:'user',content:prompt}] });
+  const raw = res.content[0].type==='text' ? res.content[0].text : '';
+  return JSON.parse(raw.replace(/\`\`\`json|\`\`\`/g,'').trim());
+}
+
+async function runAdversarialScan(signal: WebhookSignal, alfred: AlfredResult) {
+  if (alfred.decision==='NO TRADE') return { verdict:'SKIP' as const, concerns:['ALFRED scored NO TRADE - scan skipped'], override_note:null };
+  const prompt = `CL setup: ${alfred.decision} @ ${signal.price} | FVG ${signal.fvg_bottom}-${signal.fvg_top}
+EMA20: ${signal.ema20} VWAP: ${signal.vwap??'N/A'} RSI: ${signal.rsi} OVX: ${signal.ovx}
+Score: ${alfred.score}/10 (${alfred.grade}) | Reasoning: ${alfred.reasoning}
+Checklist: ${alfred.checklist.map((c:ChecklistItem)=>c.result+' '+c.label).join(', ')}
+Attack this setup. Return JSON only.`;
+  const res = await client.messages.create({ model:'claude-sonnet-4-20250514', max_tokens:600, system:ADVERSARIAL_SYSTEM_PROMPT, messages:[{role:'user',content:prompt}] });
+  const raw = res.content[0].type==='text' ? res.content[0].text : '';
+  const parsed = JSON.parse(raw.replace(/\`\`\`json|\`\`\`/g,'').trim());
+  const v = AdversarialScanSchema.safeParse(parsed);
+  return v.success ? v.data : { verdict:'CONDITIONAL_PASS' as const, concerns:['Adversarial output malformed'], override_note:null };
+}
+
+function mapChecklist(checklist: ChecklistItem[]) {
+  const g = (label:string) => checklist.find(c=>c.label===label) ?? {result:'FAIL',detail:'Not evaluated'};
+  return {
+    ema_stack_aligned:   {result:g('EMA Stack Aligned').result,   detail:g('EMA Stack Aligned').detail},
+    daily_confirms:      {result:g('Daily Confirms').result,       detail:g('Daily Confirms').detail},
+    rsi_reset_zone:      {result:g('RSI Reset Zone').result,       detail:g('RSI Reset Zone').detail},
+    macd_confirming:     {result:g('MACD Confirming').result,      detail:g('MACD Confirming').detail},
+    price_at_key_level:  {result:g('Price at Key Level').result,   detail:g('Price at Key Level').detail},
+    rr_valid:            {result:g('R/R Valid').result,            detail:g('R/R Valid').detail},
+    session_timing:      {result:g('Session Timing').result,       detail:g('Session Timing').detail},
+    eia_window_clear:    {result:g('EIA Window Clear').result,     detail:g('EIA Window Clear').detail},
+    vwap_aligned:        {result:g('VWAP Aligned').result,         detail:g('VWAP Aligned').detail},
+    htf_structure_clear: {result:g('HTF Structure Clear').result,  detail:g('HTF Structure Clear').detail},
+  } as const;
+}
 
 export async function POST(req: NextRequest) {
+  const auth = req.headers.get('x-api-key');
+  if (!INTERNAL_API_KEY || auth !== INTERNAL_API_KEY) return NextResponse.json({error:'Unauthorized'},{status:401});
+  let signal: WebhookSignal;
+  try { signal = await req.json(); } catch { return NextResponse.json({error:'Invalid JSON'},{status:400}); }
+  if (!signal.direction || !signal.price || !signal.session) return NextResponse.json({error:'Missing required fields'},{status:400});
+  const receivedAt = new Date().toISOString();
+  console.log('[WEBHOOK] Signal:', signal.direction, '@', signal.price, signal.session, receivedAt);
   try {
-    // ── 1. Verify internal key ──────────────────────────────────────────────
-    const internalKey = req.headers.get("X-Internal-Key");
-    if (!INTERNAL_API_KEY || internalKey !== INTERNAL_API_KEY) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    // ── 2. Parse payload ────────────────────────────────────────────────────
-    const signal = await req.json();
-
-    // ── 3. Basic sanity check ───────────────────────────────────────────────
-    if (!signal.price || !signal.direction) {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
-    }
-
-    // ── 4. Run ALFRED analysis ──────────────────────────────────────────────
-    const response = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 1000,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: "user", content: buildUserPrompt(signal) }],
+    const alfred = await runALFRED(signal);
+    alfred.confidence_label = scoreToConfidence(alfred.score);
+    const adversarial = await runAdversarialScan(signal, alfred);
+    console.log('[ALFRED]', alfred.decision, alfred.score+'/10', alfred.grade);
+    console.log('[ADVERSARIAL]', adversarial.verdict);
+    const journalWrite = writeJournalEntry({
+      rules_version:'1.8', session:signal.session, direction:alfred.decision,
+      source:'WEBHOOK', score:alfred.score, grade:alfred.grade as 'A+'|'A'|'B+'|'B'|'F',
+      confidence_label:alfred.confidence_label as 'CONVICTION'|'HIGH'|'MEDIUM'|'LOW',
+      entry_price: alfred.decision!=='NO TRADE' ? signal.price : null,
+      stop_loss:null, take_profit_1:null, take_profit_2:null, contracts:null, risk_dollars:null,
+      checklist:mapChecklist(alfred.checklist),
+      blocked_reasons:alfred.blocked_reasons??[],
+      wait_for:alfred.wait_for??null,
+      reasoning:alfred.reasoning,
+      market_context_snapshot:{ price:signal.price, ema20:signal.ema20, ema50:signal.ema50, ema200:signal.ema200, rsi:signal.rsi, ovx:signal.ovx, dxy:signal.dxy, ...(signal.vwap?{vwap:signal.vwap}:{}) },
+      adversarial_verdict:adversarial.verdict,
+      adversarial_notes:adversarial.concerns.join(' | '),
+      paper_trading:true,
     });
-
-    const raw = response.content[0].type === "text" ? response.content[0].text : "";
-    const clean = raw.replace(/```json|```/g, "").trim();
-    const analysis = JSON.parse(clean);
-
-    // ── 5. Build response with signal metadata attached ─────────────────────
-    const result = {
-      signal_id: `CI-${Date.now()}`,
-      received_at: new Date().toISOString(),
-      source: "tradingview_webhook",
-      signal: {
-        direction: signal.direction,
-        price: signal.price,
-        session: signal.session,
-        trigger_candle: signal.trigger_candle,
-        weekly_bias: signal.weekly_bias,
-      },
-      analysis,
-    };
-
-    // ── 6. Return result ─────────────────────────────────────────────────────
-    // The dashboard polls or subscribes to this — result is the auto-triggered analysis
-    return NextResponse.json(result);
-
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("[webhook-signal] error:", message);
-    return NextResponse.json({ error: "Signal processing failed" }, { status: 500 });
+    console.log('[JOURNAL] Auto-wrote:', journalWrite.id);
+    return NextResponse.json({ received_at:receivedAt, signal, alfred, adversarial, journal:{ id:journalWrite.id, integrity_hash:journalWrite.integrity_hash, auto_logged:true } });
+  } catch(err:unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[WEBHOOK] Error:', message);
+    return NextResponse.json({error:'Signal processing failed',detail:message},{status:500});
   }
 }
