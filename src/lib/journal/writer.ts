@@ -1,12 +1,12 @@
-import { createClient } from 'redis';
+import Redis from 'ioredis';
 import crypto from 'crypto';
 import type { JournalWriteInput } from '@/lib/validation/journal-schema';
 
 const redisUrl = process.env.kv_REDIS_URL ?? process.env.KV_REDIS_URL ?? '';
-const redisClient = createClient({ url: redisUrl });
+const redisClient = new Redis(redisUrl, { lazyConnect: true, enableOfflineQueue: false, maxRetriesPerRequest: 1 });
 
 async function getClient() {
-  if (!redisClient.isOpen) await redisClient.connect();
+  if (redisClient.status === 'wait' || redisClient.status === 'close') await redisClient.connect();
   return redisClient;
 }
 
