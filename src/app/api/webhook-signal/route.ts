@@ -3,6 +3,8 @@ import Anthropic from '@anthropic-ai/sdk';
 import { writeJournalEntry } from '@/lib/journal/writer';
 import { scoreToConfidence } from '@/lib/alfred/confidence';
 import { AdversarialScanSchema } from '@/lib/validation/journal-schema';
+import { kv } from '@/lib/kv';
+import { readContext, buildMarketMemoryPromptSection } from '@/lib/market-memory/context';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY;
@@ -42,6 +44,9 @@ interface AlfredResult {
 }
 
 async function runALFRED(signal: WebhookSignal): Promise<AlfredResult> {
+  const marketContext = await readContext(kv);
+  const marketMemorySection = buildMarketMemoryPromptSection(marketContext);
+
   const prompt = `Analyze this CL setup against v1.8 checklist:
 Direction: ${signal.direction} | Price: ${signal.price}
 EMA20: ${signal.ema20} EMA50: ${signal.ema50} EMA200: ${signal.ema200}
@@ -51,9 +56,11 @@ FVG: ${signal.fvg_direction} ${signal.fvg_bottom}-${signal.fvg_top}
 Session: ${signal.session} | Weekly bias: ${signal.weekly_bias ?? 'not set'}
 EIA active: ${signal.eia_active ? 'YES HARD BLOCK' : 'NO'}
 Return JSON only.`;
+
   const res = await client.messages.create({
     model: 'claude-sonnet-4-5', max_tokens: 1000,
-    system: ALFRED_SYSTEM_PROMPT, messages: [{ role: 'user', content: prompt }],
+    system: ALFRED_SYSTEM_PROMPT + '\n\n' + marketMemorySection,
+    messages: [{ role: 'user', content: prompt }],
   });
   const raw = res.content[0].type === 'text' ? res.content[0].text : '';
   const match = raw.match(/\{[\s\S]*\}/);

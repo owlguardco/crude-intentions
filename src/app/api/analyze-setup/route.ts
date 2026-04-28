@@ -2,43 +2,32 @@ import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { scoreToConfidence } from '@/lib/alfred/confidence';
+import { kv } from '@/lib/kv';
+import { readContext, buildMarketMemoryPromptSection } from '@/lib/market-memory/context';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // ─── Input validation schema (SECURITY.md Phase 1 clearance) ─────────────────
 const SetupInputSchema = z.object({
-  // Price fields — CL realistic range
   price:  z.number().finite().min(10).max(500),
   ema20:  z.number().finite().min(10).max(500),
   ema50:  z.number().finite().min(10).max(500),
   ema200: z.number().finite().min(10).max(500),
-
-  // Oscillators
   rsi:  z.number().finite().min(0).max(100),
   macd: z.number().finite().min(-100).max(100).optional(),
-
-  // Market conditions
   ovx: z.number().finite().min(0).max(300),
   dxy: z.enum(['rising', 'falling', 'flat', 'neutral']),
-
-  // FVG
   fvg:       z.enum(['bullish', 'bearish', 'none']),
   fvgTop:    z.number().finite().min(10).max(500).optional(),
   fvgBottom: z.number().finite().min(10).max(500).optional(),
   fvgAge:    z.number().int().min(0).max(1000).optional(),
-
-  // Session
   session: z.enum(['NY_OPEN', 'NY_AFTERNOON', 'LONDON', 'OVERLAP', 'ASIA', 'OFF_HOURS']),
-
-  // Optional context
   vwap:          z.number().finite().min(10).max(500).optional(),
   htfResistance: z.number().finite().min(10).max(500).optional(),
   htfSupport:    z.number().finite().min(10).max(500).optional(),
-
-  // 3-TF additions (v1.8)
   weeklyBias:    z.enum(['LONG', 'SHORT', 'NEUTRAL']).optional(),
   eiaActive:     z.boolean().optional(),
-}).strict(); // rejects extra fields
+}).strict();
 
 // ─── ALFRED v1.8 System Prompt ────────────────────────────────────────────────
 const SYSTEM_PROMPT = `You are ALFRED — the analysis engine for CRUDE INTENTIONS v1.8.
@@ -103,7 +92,6 @@ SCHEMA:
 // ─── POST /api/analyze-setup ──────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   try {
-    // ── Request size guard ─────────────────────────────────────────────────
     const contentLength = req.headers.get('content-length');
     if (contentLength && parseInt(contentLength) > 10 * 1024) {
       return NextResponse.json({ error: 'Payload too large' }, { status: 413 });
@@ -111,7 +99,6 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
 
-    // ── Zod validation ────────────────────────────────────────────────────
     const parsed = SetupInputSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json(
@@ -121,6 +108,9 @@ export async function POST(req: NextRequest) {
     }
 
     const d = parsed.data;
+
+    const marketContext = await readContext(kv);
+    const marketMemorySection = buildMarketMemoryPromptSection(marketContext);
 
     const userPrompt = `Analyze this CL futures setup against the v1.8 A+ checklist:
 
@@ -143,7 +133,7 @@ Score this setup. Return JSON only.`;
     const response = await client.messages.create({
       model: 'claude-sonnet-4-5',
       max_tokens: 1000,
-      system: SYSTEM_PROMPT,
+      system: SYSTEM_PROMPT + '\n\n' + marketMemorySection,
       messages: [{ role: 'user', content: userPrompt }],
     });
 
@@ -151,7 +141,6 @@ Score this setup. Return JSON only.`;
     const clean = raw.replace(/```json|```/g, '').trim();
     const result = JSON.parse(clean);
 
-    // Enforce confidence label from our pure function (guards against model drift)
     result.confidence_label = scoreToConfidence(result.score);
 
     return NextResponse.json(result);
