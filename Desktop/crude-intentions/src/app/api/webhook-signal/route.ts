@@ -52,7 +52,7 @@ Session: ${signal.session} | Weekly bias: ${signal.weekly_bias??'not set'}
 HTF Resistance: ${signal.htf_resistance??'N/A'} | HTF Support: ${signal.htf_support??'N/A'}
 EIA active: ${signal.eia_active?'YES HARD BLOCK':'NO'}
 Return JSON only.`;
-  const res = await client.messages.create({ model:'claude-sonnet-4-20250514', max_tokens:1000, system:ALFRED_SYSTEM_PROMPT, messages:[{role:'user',content:prompt}] });
+  const res = await client.messages.create({ model:'claude-sonnet-4-5', max_tokens:1000, system:ALFRED_SYSTEM_PROMPT, messages:[{role:'user',content:prompt}] });
   const raw = res.content[0].type==='text' ? res.content[0].text : '';
   return JSON.parse(raw.replace(/\`\`\`json|\`\`\`/g,'').trim());
 }
@@ -64,7 +64,7 @@ EMA20: ${signal.ema20} VWAP: ${signal.vwap??'N/A'} RSI: ${signal.rsi} OVX: ${sig
 Score: ${alfred.score}/10 (${alfred.grade}) | Reasoning: ${alfred.reasoning}
 Checklist: ${alfred.checklist.map((c:ChecklistItem)=>c.result+' '+c.label).join(', ')}
 Attack this setup. Return JSON only.`;
-  const res = await client.messages.create({ model:'claude-sonnet-4-20250514', max_tokens:600, system:ADVERSARIAL_SYSTEM_PROMPT, messages:[{role:'user',content:prompt}] });
+  const res = await client.messages.create({ model:'claude-sonnet-4-5', max_tokens:600, system:ADVERSARIAL_SYSTEM_PROMPT, messages:[{role:'user',content:prompt}] });
   const raw = res.content[0].type==='text' ? res.content[0].text : '';
   const parsed = JSON.parse(raw.replace(/\`\`\`json|\`\`\`/g,'').trim());
   const v = AdversarialScanSchema.safeParse(parsed);
