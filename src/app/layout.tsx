@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { href: "/", label: "DASHBOARD" },
   { href: "/pre-trade", label: "PRE-TRADE" },
   { href: "/journal", label: "JOURNAL" },
+  { href: "/calibration", label: "CALIBRATION" },
   { href: "/eia", label: "EIA" },
   { href: "/prompts", label: "PROMPTS" },
   { href: "/settings", label: "SETTINGS" },
