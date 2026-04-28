@@ -8,6 +8,7 @@ import { usePathname } from "next/navigation";
 const NAV_ITEMS = [
   { href: "/", label: "DASHBOARD" },
   { href: "/pre-trade", label: "PRE-TRADE" },
+  { href: "/position", label: "POSITION" },
   { href: "/journal", label: "JOURNAL" },
   { href: "/calibration", label: "CALIBRATION" },
   { href: "/eia", label: "EIA" },
