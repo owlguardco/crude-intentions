@@ -62,6 +62,7 @@ Return JSON only.`;
 }
 
 async function runAdversarialScan(signal: WebhookSignal, alfred: AlfredResult) {
+  const fallback = { verdict: 'CONDITIONAL_PASS' as const, concerns: ['Adversarial scan unavailable'], override_note: null };
   if (alfred.decision === 'NO TRADE') {
     return { verdict: 'SKIP' as const, concerns: ['ALFRED scored NO TRADE'], override_note: null };
   }
@@ -75,8 +76,9 @@ Attack this setup. Return JSON only.`;
   });
   const raw = res.content[0].type === 'text' ? res.content[0].text : '';
   const match = raw.match(/\{[\s\S]*\}/);
-  if (!match) throw new Error('No JSON in adversarial response');
-  const parsed = JSON.parse(match[0]);
+  if (!match) return fallback;
+  let parsed;
+  try { parsed = JSON.parse(match[0]); } catch { return fallback; }
   const v = AdversarialScanSchema.safeParse(parsed);
   return v.success ? v.data : { verdict: 'CONDITIONAL_PASS' as const, concerns: ['Scan malformed'], override_note: null };
 }
