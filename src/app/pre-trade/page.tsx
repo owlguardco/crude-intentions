@@ -2,6 +2,19 @@
 
 import { useState } from "react";
 
+type MTFTimeframe = "1H" | "4H" | "D";
+type MTFTrend = "UP" | "DOWN" | "NEUTRAL";
+type MTFVwap = "ABOVE" | "BELOW" | "UNKNOWN";
+
+interface MTFConsensusOut {
+  score: number;
+  label: "ALIGNED" | "MIXED" | "CONFLICTED";
+  aligned_count: number;
+  total_tfs: number;
+  dominant_trend: MTFTrend;
+  breakdown: Record<MTFTimeframe, { agrees: boolean; weight: number }>;
+}
+
 interface AnalysisResult {
   score: number;
   grade: string;
@@ -12,7 +25,23 @@ interface AnalysisResult {
   reasoning: string;
   disclaimer: string;
   fallback?: boolean;
+  mtf_consensus?: MTFConsensusOut;
 }
+
+interface MTFRowState {
+  trend: MTFTrend;
+  ema_aligned: "YES" | "NO";
+  rsi: string;
+  vwap: MTFVwap;
+}
+
+const TF_LABELS: Record<MTFTimeframe, string> = {
+  D: "DAILY",
+  "4H": "4H",
+  "1H": "1H",
+};
+
+const TF_ORDER: MTFTimeframe[] = ["D", "4H", "1H"];
 
 function recordAlfredStatus(fallback: boolean) {
   if (typeof window === "undefined") return;
@@ -66,8 +95,37 @@ export default function PreTradePage() {
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const [mtfOpen, setMtfOpen] = useState(false);
+  const [mtfRows, setMtfRows] = useState<Record<MTFTimeframe, MTFRowState>>({
+    D:    { trend: "NEUTRAL", ema_aligned: "NO", rsi: "", vwap: "UNKNOWN" },
+    "4H": { trend: "NEUTRAL", ema_aligned: "NO", rsi: "", vwap: "UNKNOWN" },
+    "1H": { trend: "NEUTRAL", ema_aligned: "NO", rsi: "", vwap: "UNKNOWN" },
+  });
+
   function set(key: string, val: string) {
     setForm((f) => ({ ...f, [key]: val }));
+  }
+
+  function setMtf(tf: MTFTimeframe, key: keyof MTFRowState, val: string) {
+    setMtfRows((rows) => ({ ...rows, [tf]: { ...rows[tf], [key]: val } }));
+  }
+
+  function buildMtfSignals() {
+    if (!mtfOpen) return null;
+    const signals = TF_ORDER
+      .map((tf) => {
+        const r = mtfRows[tf];
+        return {
+          timeframe: tf,
+          ema_aligned: r.ema_aligned === "YES",
+          rsi_value: r.rsi === "" ? 50 : Math.max(0, Math.min(100, parseFloat(r.rsi) || 50)),
+          above_vwap:
+            r.vwap === "ABOVE" ? true : r.vwap === "BELOW" ? false : null,
+          trend: r.trend,
+        };
+      });
+    const hasNonNeutral = signals.some((s) => s.trend !== "NEUTRAL");
+    return hasNonNeutral ? signals : null;
   }
 
   async function analyze() {
@@ -75,10 +133,12 @@ export default function PreTradePage() {
     setError(null);
     setResult(null);
     try {
+      const mtf_signals = buildMtfSignals();
+      const body = mtf_signals ? { ...form, mtf_signals } : { ...form };
       const res = await fetch("/api/analyze-setup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Analysis failed");
@@ -166,6 +226,91 @@ export default function PreTradePage() {
           </div>
         </div>
 
+        {/* ── MULTI-TF SIGNALS (OPTIONAL) ── */}
+        <div style={{ borderTop: "1px solid #2a2a2e", marginTop: 16, paddingTop: 14 }}>
+          <button
+            type="button"
+            onClick={() => setMtfOpen((v) => !v)}
+            style={{
+              display: "flex", alignItems: "center", gap: 8,
+              background: "transparent", border: "none", cursor: "pointer",
+              padding: 0, marginBottom: mtfOpen ? 12 : 0,
+              fontFamily: "JetBrains Mono, monospace", fontSize: 9,
+              letterSpacing: "3px", color: "#666670",
+            }}
+          >
+            <span>{mtfOpen ? "▾" : "▸"}</span>
+            MULTI-TF SIGNALS (OPTIONAL)
+          </button>
+
+          {mtfOpen && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {TF_ORDER.map((tf) => {
+                const row = mtfRows[tf];
+                return (
+                  <div
+                    key={tf}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "60px 1fr 1fr 1fr 1fr",
+                      gap: 8,
+                      alignItems: "center",
+                      padding: "8px 10px",
+                      background: "#111115",
+                      border: "1px solid #2a2a2e",
+                      borderRadius: 4,
+                    }}
+                  >
+                    <span style={{
+                      fontFamily: "JetBrains Mono, monospace", fontSize: 11,
+                      letterSpacing: "2px", color: "#d4a520", fontWeight: 700,
+                    }}>{TF_LABELS[tf]}</span>
+
+                    <select
+                      style={inputStyle as any}
+                      value={row.trend}
+                      onChange={(e) => setMtf(tf, "trend", e.target.value)}
+                    >
+                      <option value="NEUTRAL">NEUTRAL</option>
+                      <option value="UP">UP</option>
+                      <option value="DOWN">DOWN</option>
+                    </select>
+
+                    <select
+                      style={inputStyle as any}
+                      value={row.ema_aligned}
+                      onChange={(e) => setMtf(tf, "ema_aligned", e.target.value)}
+                    >
+                      <option value="NO">EMA: NO</option>
+                      <option value="YES">EMA: YES</option>
+                    </select>
+
+                    <input
+                      style={inputStyle}
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={row.rsi}
+                      onChange={(e) => setMtf(tf, "rsi", e.target.value)}
+                      placeholder="RSI"
+                    />
+
+                    <select
+                      style={inputStyle as any}
+                      value={row.vwap}
+                      onChange={(e) => setMtf(tf, "vwap", e.target.value)}
+                    >
+                      <option value="UNKNOWN">VWAP: ?</option>
+                      <option value="ABOVE">ABOVE</option>
+                      <option value="BELOW">BELOW</option>
+                    </select>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
         <button
           onClick={analyze}
           disabled={loading || !form.price}
@@ -227,6 +372,69 @@ export default function PreTradePage() {
                 </div>
               </div>
             )}
+            {/* MTF Consensus panel */}
+            {result.mtf_consensus && (() => {
+              const m = result.mtf_consensus;
+              const labelColor =
+                m.label === "ALIGNED" ? "#22c55e"
+                : m.label === "MIXED" ? "#d4a520"
+                : "#ef4444";
+              return (
+                <div style={{
+                  marginBottom: 14, padding: 14,
+                  background: "#111115", border: "1px solid #2a2a2e", borderRadius: 4,
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                    <span style={{
+                      fontFamily: "JetBrains Mono, monospace", fontSize: 9,
+                      letterSpacing: "3px", color: "#666670",
+                    }}>MULTI-TF CONSENSUS</span>
+                    <span style={{
+                      fontFamily: "JetBrains Mono, monospace", fontSize: 10,
+                      letterSpacing: "2px", padding: "2px 7px", borderRadius: 3,
+                      color: labelColor, background: `${labelColor}18`,
+                      border: `1px solid ${labelColor}40`, fontWeight: 700,
+                    }}>{m.label}</span>
+                  </div>
+
+                  {/* Score bar */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                    <div style={{
+                      flex: 1, height: 8, background: "#2a2a2e",
+                      borderRadius: 4, overflow: "hidden",
+                    }}>
+                      <div style={{
+                        width: `${m.score}%`, height: "100%",
+                        background: "#d4a520", transition: "width 0.3s ease",
+                      }} />
+                    </div>
+                    <span style={{
+                      fontFamily: "JetBrains Mono, monospace", fontSize: 11,
+                      color: "#e0e0e0", fontWeight: 700, minWidth: 64, textAlign: "right",
+                    }}>{m.score} / 100</span>
+                  </div>
+
+                  {/* Breakdown pills */}
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {(Object.keys(m.breakdown) as MTFTimeframe[])
+                      .sort((a, b) => TF_ORDER.indexOf(a) - TF_ORDER.indexOf(b))
+                      .map((tf) => {
+                        const b = m.breakdown[tf];
+                        const c = b.agrees ? "#d4a520" : "#888";
+                        return (
+                          <span key={tf} style={{
+                            fontFamily: "JetBrains Mono, monospace", fontSize: 10,
+                            letterSpacing: "1px", padding: "3px 9px", borderRadius: 3,
+                            color: c, border: `1px solid ${b.agrees ? c : "#2a2a2e"}`,
+                            fontWeight: 700,
+                          }}>{TF_LABELS[tf]}</span>
+                        );
+                      })}
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* Decision header */}
             <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 18, paddingBottom: 16, borderBottom: "1px solid #2a2a2e" }}>
               <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 32, fontWeight: 700, letterSpacing: "3px", color: decisionColor }}>

@@ -50,6 +50,13 @@ export const JournalWriteSchema = z.object({
   paper_trading: z.boolean().default(true),
   alfred_fallback: z.boolean().default(false),
   postmortem: z.string().nullable().default(null),
+  mtf_consensus: z.object({
+    score: z.number(),
+    label: z.enum(['ALIGNED','MIXED','CONFLICTED']),
+    aligned_count: z.number(),
+    total_tfs: z.number(),
+    dominant_trend: z.enum(['UP','DOWN','NEUTRAL']),
+  }).optional(),
 }).strict();
 export type JournalWriteInput = z.input<typeof JournalWriteSchema>;
 export const OutcomeUpdateSchema = z.object({

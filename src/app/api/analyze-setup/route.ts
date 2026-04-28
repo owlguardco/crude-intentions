@@ -13,6 +13,7 @@ import {
   type CalibrationSnapshot,
   type CalibrationEntry,
 } from '@/lib/journal/calibration';
+import { computeMTFConsensus } from '@/lib/alfred/mtf-consensus';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -36,6 +37,13 @@ const SetupInputSchema = z.object({
   htfSupport:    z.number().finite().min(10).max(500).optional(),
   weeklyBias:    z.enum(['LONG', 'SHORT', 'NEUTRAL']).optional(),
   eiaActive:     z.boolean().optional(),
+  mtf_signals: z.array(z.object({
+    timeframe: z.enum(['1H', '4H', 'D']),
+    ema_aligned: z.boolean(),
+    rsi_value: z.number().finite().min(0).max(100),
+    above_vwap: z.boolean().nullable(),
+    trend: z.enum(['UP', 'DOWN', 'NEUTRAL']),
+  })).min(1).max(3).optional(),
 }).strict();
 
 // ─── ALFRED v1.8 System Prompt ────────────────────────────────────────────────
@@ -117,6 +125,11 @@ export async function POST(req: NextRequest) {
     }
 
     const d = parsed.data;
+
+    const mtf_consensus =
+      d.mtf_signals && d.mtf_signals.length > 0
+        ? computeMTFConsensus(d.mtf_signals)
+        : undefined;
 
     const marketContext = await readContext(kv);
     const marketMemorySection = buildMarketMemoryPromptSection(marketContext);
@@ -200,11 +213,18 @@ Score this setup. Return JSON only.`;
         console.warn('[ANALYZE-SETUP] Calibration read skipped:', calibErr);
       }
 
-      return NextResponse.json({ ...result, predicted_accuracy });
+      return NextResponse.json({
+        ...result,
+        predicted_accuracy,
+        ...(mtf_consensus ? { mtf_consensus } : {}),
+      });
     } catch (alfredErr) {
       console.error('[ALFRED FALLBACK] Anthropic unreachable, using fallback scorer:', alfredErr);
       const fallbackResult = runFallbackScorer(fallbackInput);
-      return NextResponse.json(fallbackResult);
+      return NextResponse.json({
+        ...fallbackResult,
+        ...(mtf_consensus ? { mtf_consensus } : {}),
+      });
     }
 
   } catch (err: unknown) {
