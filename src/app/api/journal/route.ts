@@ -7,7 +7,7 @@ import { OutcomeUpdateSchema } from '@/lib/validation/journal-schema';
 // Returns full journal: decisions array + summary stats.
 export async function GET() {
   try {
-    const journal = readJournal();
+    const journal = await readJournal();
     return NextResponse.json(journal);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Write to disk ─────────────────────────────────────────────────────
-    const result = writeJournalEntry(parsed.data);
+    const result = await writeJournalEntry(parsed.data);
 
     return NextResponse.json(
       {
