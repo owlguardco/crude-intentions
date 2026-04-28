@@ -33,20 +33,8 @@ const labelStyle = {
   marginBottom: 5,
 };
 
-const sectionLabel = {
-  fontFamily: "JetBrains Mono, monospace",
-  fontSize: 9,
-  letterSpacing: "3px",
-  color: "#444450",
-  marginBottom: 12,
-  marginTop: 16,
-  display: "block",
-};
-
 function GradeBadge({ grade }: { grade: string }) {
-  const colors: Record<string, string> = {
-    "A+": "#22c55e", A: "#86efac", "B+": "#a3e635", B: "#d4a520", F: "#ef4444",
-  };
+  const colors: Record<string, string> = { "A+": "#22c55e", A: "#86efac", B: "#d4a520", F: "#ef4444" };
   const c = colors[grade] || "#666670";
   return (
     <span style={{
@@ -56,15 +44,6 @@ function GradeBadge({ grade }: { grade: string }) {
   );
 }
 
-// Layer labels for grouping checklist visually
-const LAYER_LABELS: Record<number, string> = {
-  0: "LAYER 1 — TREND",
-  2: "LAYER 2 — MOMENTUM",
-  4: "LAYER 3 — STRUCTURE",
-  6: "LAYER 4 — CONFIRMATION",
-  8: "LAYER 5 — CONTEXT",
-};
-
 export default function PreTradePage() {
   const [form, setForm] = useState({
     price: "", ema20: "", ema50: "", ema200: "",
@@ -72,9 +51,6 @@ export default function PreTradePage() {
     dxy: "Declining", fvg: "Bullish",
     fvgTop: "", fvgBottom: "", fvgAge: "",
     session: "NY Open",
-    vwap: "",
-    htfResistance: "",
-    htfSupport: "",
   });
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
@@ -103,107 +79,79 @@ export default function PreTradePage() {
     setLoading(false);
   }
 
-  const decisionColor = result?.decision === "LONG"
-    ? "#22c55e" : result?.decision === "SHORT" ? "#ef4444" : "#d4a520";
+  const decisionColor = result?.decision === "LONG" ? "#22c55e" : result?.decision === "SHORT" ? "#ef4444" : "#d4a520";
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
 
       {/* ── INPUT ── */}
       <div style={{ background: "#1a1a1e", border: "1px solid #2a2a2e", borderRadius: 6, padding: 22 }}>
-        <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "3px", color: "#d4a520", marginBottom: 18 }}>
-          SETUP INPUTS — v1.4
-        </div>
+        <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "3px", color: "#d4a520", marginBottom: 18 }}>SETUP INPUTS</div>
 
-        {/* Price + EMAs */}
-        <span style={sectionLabel}>PRICE & EMA STACK</span>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 4 }}>
-          {[["price", "PRICE"], ["ema20", "EMA 20"], ["ema50", "EMA 50"], ["ema200", "EMA 200"]].map(([key, label]) => (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+          {[
+            ["price", "PRICE"],
+            ["ema20", "EMA 20"],
+            ["ema50", "EMA 50"],
+            ["ema200", "EMA 200"],
+            ["rsi", "RSI 14 (0–100)"],
+            ["macd", "MACD HIST"],
+            ["ovx", "OVX"],
+          ].map(([key, label]) => (
             <div key={key}>
               <label style={labelStyle}>{label}</label>
-              <input style={inputStyle} type="number" value={form[key as keyof typeof form]}
-                onChange={(e) => set(key, e.target.value)} placeholder="—" />
+              <input
+                style={inputStyle}
+                type="number"
+                value={form[key as keyof typeof form]}
+                onChange={(e) => set(key, e.target.value)}
+                placeholder="—"
+              />
             </div>
           ))}
-        </div>
 
-        {/* Momentum */}
-        <span style={sectionLabel}>MOMENTUM</span>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 4 }}>
-          {[["rsi", "RSI 14"], ["macd", "MACD HIST"], ["ovx", "OVX"]].map(([key, label]) => (
-            <div key={key}>
-              <label style={labelStyle}>{label}</label>
-              <input style={inputStyle} type="number" value={form[key as keyof typeof form]}
-                onChange={(e) => set(key, e.target.value)} placeholder="—" />
-            </div>
-          ))}
           <div>
             <label style={labelStyle}>DXY TREND</label>
             <select style={inputStyle as any} value={form.dxy} onChange={(e) => set("dxy", e.target.value)}>
-              <option>Rising</option><option>Declining</option><option>Neutral</option>
+              <option>Rising</option>
+              <option>Declining</option>
+              <option>Neutral</option>
             </select>
           </div>
         </div>
 
-        {/* FVG */}
-        <span style={sectionLabel}>FVG DATA</span>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 4 }}>
-          <div>
-            <label style={labelStyle}>FVG DIRECTION</label>
-            <select style={inputStyle as any} value={form.fvg} onChange={(e) => set("fvg", e.target.value)}>
-              <option>Bullish</option><option>Bearish</option><option>None</option>
-            </select>
-          </div>
-          <div>
-            <label style={labelStyle}>FVG AGE (BARS)</label>
-            <input style={inputStyle} type="number" value={form.fvgAge}
-              onChange={(e) => set("fvgAge", e.target.value)} placeholder="—" />
-          </div>
-          <div>
-            <label style={labelStyle}>FVG TOP</label>
-            <input style={inputStyle} type="number" value={form.fvgTop}
-              onChange={(e) => set("fvgTop", e.target.value)} placeholder="—" />
-          </div>
-          <div>
-            <label style={labelStyle}>FVG BOTTOM</label>
-            <input style={inputStyle} type="number" value={form.fvgBottom}
-              onChange={(e) => set("fvgBottom", e.target.value)} placeholder="—" />
-          </div>
-        </div>
-
-        {/* VWAP + HTF — new in v1.4 */}
-        <span style={{ ...sectionLabel, color: "#d4a520" }}>LAYER 5 — CONTEXT (NEW)</span>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 4, padding: "12px", background: "#d4a52008", border: "1px solid #d4a52025", borderRadius: 4 }}>
-          <div>
-            <label style={labelStyle}>VWAP</label>
-            <input style={inputStyle} type="number" value={form.vwap}
-              onChange={(e) => set("vwap", e.target.value)} placeholder="—" />
-          </div>
-          <div style={{ display: "flex", alignItems: "flex-end" }}>
-            <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, color: "#444450", lineHeight: 1.5 }}>
-              Price vs VWAP determines institutional order flow direction
+        <div style={{ borderTop: "1px solid #2a2a2e", paddingTop: 16 }}>
+          <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "3px", color: "#666670", marginBottom: 12 }}>FVG DATA</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div>
+              <label style={labelStyle}>FVG DIRECTION</label>
+              <select style={inputStyle as any} value={form.fvg} onChange={(e) => set("fvg", e.target.value)}>
+                <option>Bullish</option>
+                <option>Bearish</option>
+                <option>None</option>
+              </select>
             </div>
-          </div>
-          <div>
-            <label style={labelStyle}>HTF RESISTANCE ABOVE</label>
-            <input style={inputStyle} type="number" value={form.htfResistance}
-              onChange={(e) => set("htfResistance", e.target.value)} placeholder="Nearest daily/weekly resistance" />
-          </div>
-          <div>
-            <label style={labelStyle}>HTF SUPPORT BELOW</label>
-            <input style={inputStyle} type="number" value={form.htfSupport}
-              onChange={(e) => set("htfSupport", e.target.value)} placeholder="Nearest daily/weekly support" />
-          </div>
-        </div>
-
-        {/* Session */}
-        <span style={sectionLabel}>SESSION</span>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <div>
-            <label style={labelStyle}>SESSION</label>
-            <select style={inputStyle as any} value={form.session} onChange={(e) => set("session", e.target.value)}>
-              <option>NY Open</option><option>London</option><option>Asia</option><option>Off-hours</option>
-            </select>
+            <div>
+              <label style={labelStyle}>FVG AGE (BARS)</label>
+              <input style={inputStyle} type="number" value={form.fvgAge} onChange={(e) => set("fvgAge", e.target.value)} placeholder="—" />
+            </div>
+            <div>
+              <label style={labelStyle}>FVG TOP</label>
+              <input style={inputStyle} type="number" value={form.fvgTop} onChange={(e) => set("fvgTop", e.target.value)} placeholder="—" />
+            </div>
+            <div>
+              <label style={labelStyle}>FVG BOTTOM</label>
+              <input style={inputStyle} type="number" value={form.fvgBottom} onChange={(e) => set("fvgBottom", e.target.value)} placeholder="—" />
+            </div>
+            <div>
+              <label style={labelStyle}>SESSION</label>
+              <select style={inputStyle as any} value={form.session} onChange={(e) => set("session", e.target.value)}>
+                <option>NY Open</option>
+                <option>London</option>
+                <option>Asia</option>
+                <option>Off-hours</option>
+              </select>
+            </div>
           </div>
         </div>
 
@@ -213,10 +161,9 @@ export default function PreTradePage() {
           style={{
             marginTop: 20, width: "100%", padding: "11px 0",
             background: loading || !form.price ? "#666670" : "#d4a520",
-            border: "none", borderRadius: 4,
-            cursor: loading || !form.price ? "not-allowed" : "pointer",
-            fontFamily: "JetBrains Mono, monospace", fontSize: 11,
-            letterSpacing: "2px", fontWeight: 700, color: "#0d0d0f",
+            border: "none", borderRadius: 4, cursor: loading || !form.price ? "not-allowed" : "pointer",
+            fontFamily: "JetBrains Mono, monospace", fontSize: 11, letterSpacing: "2px",
+            fontWeight: 700, color: "#0d0d0f",
           }}
         >
           {loading ? "ANALYZING..." : "ANALYZE SETUP →"}
@@ -225,18 +172,16 @@ export default function PreTradePage() {
 
       {/* ── OUTPUT ── */}
       <div style={{ background: "#1a1a1e", border: "1px solid #2a2a2e", borderRadius: 6, padding: 22 }}>
-        <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "3px", color: "#d4a520", marginBottom: 18 }}>
-          ANALYSIS OUTPUT — v1.4 (10 PT)
-        </div>
+        <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "3px", color: "#d4a520", marginBottom: 18 }}>ANALYSIS OUTPUT</div>
 
         {!result && !error && !loading && (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 360, fontFamily: "JetBrains Mono, monospace", fontSize: 11, letterSpacing: "3px", color: "#444450" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 320, fontFamily: "JetBrains Mono, monospace", fontSize: 11, letterSpacing: "3px", color: "#444450" }}>
             AWAITING INPUT
           </div>
         )}
 
         {loading && (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 360, fontFamily: "JetBrains Mono, monospace", fontSize: 11, letterSpacing: "3px", color: "#d4a520" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 320, fontFamily: "JetBrains Mono, monospace", fontSize: 11, letterSpacing: "3px", color: "#d4a520" }}>
             RUNNING ANALYSIS...
           </div>
         )}
@@ -255,45 +200,24 @@ export default function PreTradePage() {
                 {result.decision}
               </span>
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 15, color: "#e0e0e0" }}>{result.score}/10</span>
+                <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 15, color: "#e0e0e0" }}>{result.score}/8</span>
                 <GradeBadge grade={result.grade} />
-              </div>
-              {/* Score bar */}
-              <div style={{ flex: 1, height: 4, background: "#2a2a2e", borderRadius: 2, overflow: "hidden" }}>
-                <div style={{
-                  height: "100%", borderRadius: 2,
-                  width: `${(result.score / 10) * 100}%`,
-                  background: result.score >= 9 ? "#22c55e" : result.score >= 7 ? "#d4a520" : "#ef4444",
-                  transition: "width 0.5s ease",
-                }} />
               </div>
             </div>
 
-            {/* Checklist with layer headers */}
+            {/* Checklist */}
             <div style={{ marginBottom: 14 }}>
               {result.checklist?.map((item, i) => (
-                <div key={i}>
-                  {LAYER_LABELS[i] && (
-                    <div style={{
-                      fontFamily: "JetBrains Mono, monospace", fontSize: 8,
-                      letterSpacing: "2px", color: i >= 8 ? "#d4a520" : "#444450",
-                      marginTop: i === 0 ? 0 : 10, marginBottom: 6,
-                    }}>
-                      {LAYER_LABELS[i]}
-                    </div>
-                  )}
-                  <div style={{ marginBottom: 7 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: "#e0e0e0" }}>{item.label}</span>
-                      <span style={{
-                        fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "1px",
-                        color: item.result === "PASS" ? "#22c55e" : "#ef4444", flexShrink: 0,
-                      }}>{item.result}</span>
-                    </div>
-                    {item.detail && (
-                      <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, color: "#666670", marginTop: 2 }}>{item.detail}</div>
-                    )}
+                <div key={i} style={{ marginBottom: 8 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: "#e0e0e0" }}>{item.label}</span>
+                    <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "1px", color: item.result === "PASS" ? "#22c55e" : "#ef4444", flexShrink: 0 }}>
+                      {item.result}
+                    </span>
                   </div>
+                  {item.detail && (
+                    <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, color: "#666670", marginTop: 2 }}>{item.detail}</div>
+                  )}
                 </div>
               ))}
             </div>
@@ -308,6 +232,7 @@ export default function PreTradePage() {
               </div>
             )}
 
+            {/* Wait for */}
             {result.wait_for && (
               <div style={{ marginBottom: 12, padding: 10, background: "#d4a52010", border: "1px solid #d4a52030", borderRadius: 4 }}>
                 <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "2px", color: "#d4a520", marginBottom: 6 }}>WAIT FOR:</div>
@@ -315,12 +240,14 @@ export default function PreTradePage() {
               </div>
             )}
 
+            {/* Reasoning */}
             {result.reasoning && (
               <div style={{ fontSize: 12, color: "#888", lineHeight: 1.65, marginBottom: 12, paddingTop: 12, borderTop: "1px solid #2a2a2e" }}>
                 {result.reasoning}
               </div>
             )}
 
+            {/* Disclaimer */}
             <div style={{ padding: "8px 12px", background: "#111115", borderRadius: 4, fontFamily: "JetBrains Mono, monospace", fontSize: 9, color: "#444450", lineHeight: 1.6, marginBottom: 12 }}>
               {result.disclaimer}
             </div>
