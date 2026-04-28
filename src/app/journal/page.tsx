@@ -34,6 +34,7 @@ const FILTER_TABS = ["ALL", "LONG", "SHORT", "NO TRADE", "WIN", "LOSS", "OPEN"];
 export default function JournalPage() {
   const [filter, setFilter] = useState("ALL");
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [expandedPostmortem, setExpandedPostmortem] = useState<string | null>(null);
   const [decisions, setDecisions] = useState<any[]>([]);
   const [lastCount, setLastCount] = useState(0);
   const [live, setLive] = useState(false);
@@ -177,16 +178,36 @@ export default function JournalPage() {
                     </span>
                   </td>
                   <td style={{ padding: "11px 0", borderBottom: "1px solid #2a2a2e20" }}>
-                    {d.outcome?.status === 'OPEN' ? (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setOpenOutcomeModal(d as TradeEntry); }}
-                        style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "1px", padding: "3px 8px", borderRadius: 3, cursor: "pointer", background: "transparent", border: "1px solid #d4a520", color: "#d4a520" }}
-                      >LOG OUTCOME</button>
-                    ) : (
-                      <OutcomeBadge status={d.outcome?.status} result={d.outcome?.result} />
-                    )}
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      {d.outcome?.status === 'OPEN' ? (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setOpenOutcomeModal(d as TradeEntry); }}
+                          style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "1px", padding: "3px 8px", borderRadius: 3, cursor: "pointer", background: "transparent", border: "1px solid #d4a520", color: "#d4a520" }}
+                        >LOG OUTCOME</button>
+                      ) : (
+                        <OutcomeBadge status={d.outcome?.status} result={d.outcome?.result} />
+                      )}
+                      {d.postmortem && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setExpandedPostmortem(expandedPostmortem === d.id ? null : d.id); }}
+                          title="Toggle post-mortem"
+                          style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "1px", padding: "3px 6px", borderRadius: 3, cursor: "pointer", background: "transparent", border: "1px solid #2a2a2e", color: "#888" }}
+                        >{expandedPostmortem === d.id ? "▾ PM" : "▸ PM"}</button>
+                      )}
+                    </div>
                   </td>
                 </tr>
+
+                {/* Post-mortem row */}
+                {expandedPostmortem === d.id && d.postmortem && (
+                  <tr key={`${d.id}-postmortem`}>
+                    <td colSpan={11} style={{ padding: "0 0 12px 0", borderBottom: "1px solid #2a2a2e20" }}>
+                      <div style={{ fontFamily: "Inter, sans-serif", fontSize: 12, fontStyle: "italic", color: "#888", lineHeight: 1.65, padding: "10px 14px", background: "#111115", borderLeft: "2px solid #d4a520", borderRadius: 3 }}>
+                        {d.postmortem}
+                      </div>
+                    </td>
+                  </tr>
+                )}
 
                 {/* Expanded row */}
                 {expanded === d.id && (

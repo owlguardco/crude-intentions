@@ -49,8 +49,9 @@ export const JournalWriteSchema = z.object({
   outcome: OutcomeSchema.optional(),
   paper_trading: z.boolean().default(true),
   alfred_fallback: z.boolean().default(false),
+  postmortem: z.string().nullable().default(null),
 }).strict();
-export type JournalWriteInput = z.infer<typeof JournalWriteSchema>;
+export type JournalWriteInput = z.input<typeof JournalWriteSchema>;
 export const OutcomeUpdateSchema = z.object({
   status: z.enum(['WIN','LOSS','SCRATCH','EXPIRED']),
   close_price: z.number().finite().min(10).max(500),

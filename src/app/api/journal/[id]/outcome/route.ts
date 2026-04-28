@@ -22,8 +22,17 @@ const PatchBodySchema = z.object({
   run_postmortem: z.boolean().optional().default(false),
 });
 
-function firePostMortem(id: string): void {
-  console.log('[POST-MORTEM] Queued for', id, '— implementation pending');
+function firePostMortem(req: NextRequest, id: string): void {
+  const proto = req.headers.get('x-forwarded-proto') ?? 'http';
+  const host = req.headers.get('host') ?? 'localhost:3000';
+  const url = `${proto}://${host}/api/journal/${id}/postmortem`;
+
+  void fetch(url, {
+    method: 'POST',
+    headers: { 'x-api-key': process.env.INTERNAL_API_KEY ?? '' },
+  }).catch((err) => {
+    console.error('[POST-MORTEM] Fire failed for', id, err);
+  });
 }
 
 export async function PATCH(
@@ -130,7 +139,7 @@ export async function PATCH(
 
   // Step 4 — Fire post-mortem in background (non-blocking)
   if (run_postmortem) {
-    firePostMortem(entry.id);
+    firePostMortem(req, entry.id);
   }
 
   return NextResponse.json({ ok: true, calibration_trades: snapshot.totals.trades_closed });
