@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import LogOutcomeModal, { type TradeEntry } from "@/components/journal/LogOutcomeModal";
 
 function OutcomeBadge({ status, result }: { status: string; result?: string | null }) {
   const key = result || status;
@@ -36,22 +37,36 @@ export default function JournalPage() {
   const [decisions, setDecisions] = useState<any[]>([]);
   const [lastCount, setLastCount] = useState(0);
   const [live, setLive] = useState(false);
+  const [openOutcomeModal, setOpenOutcomeModal] = useState<TradeEntry | null>(null);
+
+  const loadJournal = async (silent = false) => {
+    try {
+      const res = await fetch('/api/journal');
+      const json = await res.json();
+      const d = json.decisions || [];
+      if (silent && d.length > lastCount) setLastCount(d.length);
+      setDecisions(d);
+      setLive(true);
+    } catch {}
+  };
 
   useEffect(() => {
-    const load = async (silent = false) => {
-      try {
-        const res = await fetch('/api/journal');
-        const json = await res.json();
-        const d = json.decisions || [];
-        if (silent && d.length > lastCount) setLastCount(d.length);
-        setDecisions(d);
-        setLive(true);
-      } catch {}
-    };
-    load();
-    const t = setInterval(() => load(true), 15000);
+    loadJournal();
+    const t = setInterval(() => loadJournal(true), 15000);
     return () => clearInterval(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastCount]);
+
+  async function handleSaveOutcome(id: string, payload: object) {
+    const res = await fetch(`/api/journal/${id}/outcome`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error('Save failed');
+    setOpenOutcomeModal(null);
+    await loadJournal();
+  }
 
   const total = decisions.length;
   const taken = decisions.filter((d: any) => d.direction !== "NO TRADE").length;
@@ -71,6 +86,7 @@ export default function JournalPage() {
   }).slice().reverse();
 
   return (
+    <>
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
       {/* Stats bar */}
@@ -160,7 +176,16 @@ export default function JournalPage() {
                       {d.adversarial_verdict?.replace("_", " ") ?? "—"}
                     </span>
                   </td>
-                  <td style={{ padding: "11px 0", borderBottom: "1px solid #2a2a2e20" }}><OutcomeBadge status={d.outcome?.status} result={d.outcome?.result} /></td>
+                  <td style={{ padding: "11px 0", borderBottom: "1px solid #2a2a2e20" }}>
+                    {d.outcome?.status === 'OPEN' ? (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setOpenOutcomeModal(d as TradeEntry); }}
+                        style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "1px", padding: "3px 8px", borderRadius: 3, cursor: "pointer", background: "transparent", border: "1px solid #d4a520", color: "#d4a520" }}
+                      >LOG OUTCOME</button>
+                    ) : (
+                      <OutcomeBadge status={d.outcome?.status} result={d.outcome?.result} />
+                    )}
+                  </td>
                 </tr>
 
                 {/* Expanded row */}
@@ -220,5 +245,14 @@ export default function JournalPage() {
         </table>
       </div>
     </div>
+
+    {openOutcomeModal && (
+      <LogOutcomeModal
+        trade={openOutcomeModal}
+        onClose={() => setOpenOutcomeModal(null)}
+        onSave={handleSaveOutcome}
+      />
+    )}
+    </>
   );
 }

@@ -4,6 +4,11 @@ import { z } from 'zod';
 import { scoreToConfidence } from '@/lib/alfred/confidence';
 import { kv } from '@/lib/kv';
 import { readContext, buildMarketMemoryPromptSection } from '@/lib/market-memory/context';
+import {
+  getPredictedAccuracy,
+  type CalibrationSnapshot,
+  type CalibrationEntry,
+} from '@/lib/journal/calibration';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -143,7 +148,34 @@ Score this setup. Return JSON only.`;
 
     result.confidence_label = scoreToConfidence(result.score);
 
-    return NextResponse.json(result);
+    // Append predicted accuracy from calibration history (null until first trade closes)
+    let predicted_accuracy = null;
+    try {
+      const snapshot = await kv.get<CalibrationSnapshot>('calibration:latest');
+      if (snapshot) {
+        const allEntries = (await kv.get<CalibrationEntry[]>('journal:entries')) ?? [];
+        const closedEntries = allEntries.filter(
+          (e) =>
+            e.outcome?.status === 'WIN' ||
+            e.outcome?.status === 'LOSS' ||
+            e.outcome?.status === 'SCRATCH'
+        );
+        predicted_accuracy = getPredictedAccuracy(
+          {
+            score: result.score as number,
+            grade: result.grade as string,
+            confidence_label: result.confidence_label as string,
+            session: d.session,
+          },
+          snapshot,
+          closedEntries
+        );
+      }
+    } catch (calibErr) {
+      console.warn('[ANALYZE-SETUP] Calibration read skipped:', calibErr);
+    }
+
+    return NextResponse.json({ ...result, predicted_accuracy });
 
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';

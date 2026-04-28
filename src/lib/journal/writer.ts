@@ -15,7 +15,7 @@ const SUMMARY_KEY = 'journal:summary';
 
 export interface JournalEntry extends JournalWriteInput {
   id: string; timestamp: string; integrity_hash: string;
-  outcome: { status: 'OPEN'|'WIN'|'LOSS'|'SCRATCH'|'BLOCKED'|'EXPIRED'; result: number|null; result_dollars: number|null; close_timestamp: string|null; close_price: number|null; post_mortem: string|null; post_mortem_timestamp: string|null; };
+  outcome: { status: 'OPEN'|'WIN'|'LOSS'|'SCRATCH'|'BLOCKED'|'EXPIRED'; result: number|null; result_dollars: number|null; result_r: number|null; close_timestamp: string|null; close_price: number|null; post_mortem: string|null; post_mortem_timestamp: string|null; };
 }
 export interface JournalSummary { total_evaluations: number; trades_taken: number; trades_blocked: number; win: number; loss: number; win_rate_pct: number; last_updated: string; }
 export interface JournalData { schema_version: string; decisions: JournalEntry[]; summary: JournalSummary; }
@@ -54,7 +54,7 @@ export async function writeJournalEntry(input: JournalWriteInput): Promise<Write
   const id = generateId(journal.decisions);
   const timestamp = new Date().toISOString();
   const integrity_hash = computeIntegrityHash(id, timestamp, input.direction, input.score, input.entry_price);
-  const entry: JournalEntry = { ...input, id, timestamp, integrity_hash, outcome: { status: input.direction==='NO TRADE'?'BLOCKED':'OPEN', result:null, result_dollars:null, close_timestamp:null, close_price:null, post_mortem:null, post_mortem_timestamp:null } };
+  const entry: JournalEntry = { ...input, id, timestamp, integrity_hash, outcome: { status: input.direction==='NO TRADE'?'BLOCKED':'OPEN', result:null, result_dollars:null, result_r:null, close_timestamp:null, close_price:null, post_mortem:null, post_mortem_timestamp:null } };
   const updated = [...journal.decisions, entry];
   const r = await getClient();
   await Promise.all([r.set(JOURNAL_KEY, JSON.stringify(updated)), r.set(SUMMARY_KEY, JSON.stringify(recomputeSummary(updated)))]);

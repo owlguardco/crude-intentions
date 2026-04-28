@@ -3,6 +3,7 @@
 import Link from "next/link";
 import logData from "@/data/safety_check_log.json";
 import weeklyBias from "@/data/weekly_bias.json";
+import MarketMemoryWidget from "@/components/MarketMemoryWidget";
 
 const CHECKLIST_ITEMS = [
   "EMA Stack Aligned",
@@ -51,8 +52,8 @@ export default function DashboardPage() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
-      {/* Top row: Bias + Score + Mini signals */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
+      {/* Top row: Bias + Score + Mini signals + Market Memory */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 16 }}>
 
         {/* Weekly Bias */}
         <div style={{
@@ -96,6 +97,9 @@ export default function DashboardPage() {
             RUN FULL ANALYSIS →
           </Link>
         </div>
+
+        {/* Market Memory Widget */}
+        <MarketMemoryWidget />
 
         {/* Recent Signals Mini */}
         <div style={{ background: "#1a1a1e", border: "1px solid #2a2a2e", borderRadius: 6, padding: 20 }}>

@@ -14,6 +14,7 @@ export const OutcomeSchema = z.object({
   status: z.enum(['OPEN','WIN','LOSS','SCRATCH','BLOCKED','EXPIRED']),
   result: z.number().nullable().default(null),
   result_dollars: z.number().nullable().default(null),
+  result_r: z.number().nullable().default(null),
   close_timestamp: z.string().nullable().default(null),
   close_price: z.number().nullable().default(null),
   post_mortem: z.string().nullable().default(null),
