@@ -1,0 +1,21 @@
+{
+  "webhook_url": "https://your-railway-server.up.railway.app",
+  "internal_api_key": "your-INTERNAL_API_KEY-here",
+  "data_dir": "./data",
+  "signals_file": "trade_signals.csv",
+  "outcomes_file": "trade_outcome.csv",
+  "log_file": "signal_writer_log.json",
+  "apex_account": {
+    "max_daily_loss_dollars": 1000,
+    "max_consecutive_losses": 3,
+    "max_contracts": 2,
+    "paper_mode": true
+  },
+  "execution": {
+    "min_score": 7,
+    "min_grade": "A",
+    "allowed_sessions": ["NY_OPEN", "LONDON"],
+    "block_eia_window": true,
+    "stale_signal_seconds": 30
+  }
+}
