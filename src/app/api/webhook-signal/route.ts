@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { writeJournalEntry } from '@/lib/journal/writer';
 import { scoreToConfidence } from '@/lib/alfred/confidence';
+import {
+  runFallbackScorer,
+  type FallbackScorerInput,
+} from '@/lib/alfred/fallback-scorer';
 import { AdversarialScanSchema } from '@/lib/validation/journal-schema';
 import { kv } from '@/lib/kv';
 import { readContext, buildMarketMemoryPromptSection } from '@/lib/market-memory/context';
@@ -41,6 +45,25 @@ interface AlfredResult {
   score: number; grade: string; decision: 'LONG' | 'SHORT' | 'NO TRADE';
   confidence_label: string; checklist: ChecklistItem[];
   blocked_reasons: string[]; wait_for: string | null; reasoning: string; disclaimer: string;
+  fallback?: boolean;
+}
+
+function signalToFallbackInput(s: WebhookSignal): FallbackScorerInput {
+  const dxy: 'rising' | 'falling' | 'flat' | 'neutral' =
+    s.dxy === 'rising' || s.dxy === 'falling' || s.dxy === 'flat' || s.dxy === 'neutral'
+      ? s.dxy
+      : 'neutral';
+  const fvgDir: 'bullish' | 'bearish' | 'none' =
+    s.fvg_direction === 'bullish' || s.fvg_direction === 'bearish' ? s.fvg_direction : 'none';
+  const wb: 'LONG' | 'SHORT' | 'NEUTRAL' =
+    s.weekly_bias === 'LONG' || s.weekly_bias === 'SHORT' ? s.weekly_bias : 'NEUTRAL';
+  return {
+    direction: s.direction,
+    price: s.price, ema20: s.ema20, ema50: s.ema50, ema200: s.ema200,
+    rsi: s.rsi, macd: s.macd, vwap: s.vwap, ovx: s.ovx,
+    dxy, fvg_direction: fvgDir, fvg_top: s.fvg_top, fvg_bottom: s.fvg_bottom,
+    session: s.session, weekly_bias: wb, eia_active: s.eia_active,
+  };
 }
 
 async function runALFRED(signal: WebhookSignal): Promise<AlfredResult> {
@@ -120,9 +143,20 @@ export async function POST(req: NextRequest) {
   }
   const receivedAt = new Date().toISOString();
   try {
-    const alfred = await runALFRED(signal);
-    alfred.confidence_label = scoreToConfidence(alfred.score);
-    const adversarial = await runAdversarialScan(signal, alfred);
+    let alfred: AlfredResult;
+    let isFallback = false;
+    try {
+      alfred = await runALFRED(signal);
+      alfred.confidence_label = scoreToConfidence(alfred.score);
+      alfred.fallback = false;
+    } catch (alfredErr) {
+      console.error('[ALFRED FALLBACK] Anthropic unreachable, using fallback scorer:', alfredErr);
+      alfred = runFallbackScorer(signalToFallbackInput(signal));
+      isFallback = true;
+    }
+    const adversarial = isFallback
+      ? { verdict: 'CONDITIONAL_PASS' as const, concerns: ['Adversarial scan skipped — fallback mode'], override_note: null }
+      : await runAdversarialScan(signal, alfred);
     const journalWrite = await writeJournalEntry({
       rules_version: '1.8', session: signal.session, direction: alfred.decision,
       source: 'WEBHOOK', score: alfred.score,
@@ -141,6 +175,7 @@ export async function POST(req: NextRequest) {
       adversarial_verdict: adversarial.verdict,
       adversarial_notes: adversarial.concerns.join(' | '),
       paper_trading: true,
+      alfred_fallback: isFallback,
     });
     console.log(`[JOURNAL] Wrote: ${journalWrite.id}`);
     return NextResponse.json({

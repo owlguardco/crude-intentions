@@ -11,6 +11,16 @@ interface AnalysisResult {
   wait_for: string | null;
   reasoning: string;
   disclaimer: string;
+  fallback?: boolean;
+}
+
+function recordAlfredStatus(fallback: boolean) {
+  if (typeof window === "undefined") return;
+  const now = String(Date.now());
+  if (fallback) localStorage.setItem("alfred:lastFallbackAt", now);
+  else          localStorage.setItem("alfred:lastSuccessAt", now);
+  // Notify the layout listener in this same tab (storage event only fires across tabs)
+  window.dispatchEvent(new Event("alfred:status-changed"));
 }
 
 const inputStyle = {
@@ -73,6 +83,7 @@ export default function PreTradePage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Analysis failed");
       setResult(data);
+      recordAlfredStatus(Boolean(data.fallback));
     } catch (e: any) {
       setError(e.message || "Unknown error");
     }
@@ -194,6 +205,28 @@ export default function PreTradePage() {
 
         {result && (
           <div>
+            {/* Fallback banner — ALFRED API unreachable, deterministic scorer was used */}
+            {result.fallback && (
+              <div style={{
+                marginBottom: 14,
+                padding: "10px 12px",
+                background: "rgba(212,165,32,0.10)",
+                border: "1px solid rgba(212,165,32,0.45)",
+                borderRadius: 4,
+                fontFamily: "JetBrains Mono, monospace",
+                fontSize: 11,
+                color: "#d4a520",
+                lineHeight: 1.55,
+              }}>
+                <div style={{ fontWeight: 700, letterSpacing: "2px", marginBottom: 4, fontSize: 10 }}>
+                  ⚠ FALLBACK MODE — ALFRED OFFLINE
+                </div>
+                <div style={{ color: "#888", fontSize: 10 }}>
+                  Anthropic API unreachable. Score and decision below come from the deterministic
+                  rules engine, not full ALFRED analysis. Treat as a sanity check.
+                </div>
+              </div>
+            )}
             {/* Decision header */}
             <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 18, paddingBottom: 16, borderBottom: "1px solid #2a2a2e" }}>
               <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 32, fontWeight: 700, letterSpacing: "3px", color: decisionColor }}>

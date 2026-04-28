@@ -42,10 +42,24 @@ function getEIA() {
   return { hours, mins, isActive: diff < 10800000 && diff > 0 };
 }
 
+type AlfredStatus = "UP" | "FALLBACK" | "DOWN";
+const FALLBACK_AMBER_GRACE_MS = 5 * 60 * 1000; // 5 minutes after a fallback, dot stays amber
+
+function deriveAlfredStatus(): AlfredStatus {
+  if (typeof window === "undefined") return "UP";
+  const fb = parseInt(localStorage.getItem("alfred:lastFallbackAt") ?? "0", 10);
+  const ok = parseInt(localStorage.getItem("alfred:lastSuccessAt") ?? "0", 10);
+  if (!fb && !ok) return "UP";
+  if (fb > ok) return "FALLBACK";
+  if (fb && Date.now() - fb < FALLBACK_AMBER_GRACE_MS) return "DOWN"; // recovered, within grace window
+  return "UP";
+}
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [apiStatus, setApiStatus] = useState<"checking" | "online" | "offline">("checking");
+  const [alfredStatus, setAlfredStatus] = useState<AlfredStatus>("UP");
   const [session, setSession] = useState(getSession());
   const [eia, setEia] = useState(getEIA());
 
@@ -53,16 +67,37 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     const interval = setInterval(() => {
       setSession(getSession());
       setEia(getEIA());
+      setAlfredStatus(deriveAlfredStatus());
     }, 30000);
     // Lightweight API health check
     fetch("/api/health")
       .then(() => setApiStatus("online"))
       .catch(() => setApiStatus("offline"));
-    return () => clearInterval(interval);
+    setAlfredStatus(deriveAlfredStatus());
+    const onChange = () => setAlfredStatus(deriveAlfredStatus());
+    window.addEventListener("storage", onChange);
+    window.addEventListener("alfred:status-changed", onChange);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("storage", onChange);
+      window.removeEventListener("alfred:status-changed", onChange);
+    };
   }, []);
 
+  // ALFRED status overrides API health for the dot:
+  //   FALLBACK = red (currently degraded), DOWN = amber (recovered, within grace),
+  //   UP      = follows /api/health.
   const dotColor =
-    apiStatus === "online" ? "#22c55e" : apiStatus === "checking" ? "#d4a520" : "#ef4444";
+    alfredStatus === "FALLBACK" ? "#ef4444"
+    : alfredStatus === "DOWN"    ? "#d4a520"
+    : apiStatus === "online"     ? "#22c55e"
+    : apiStatus === "checking"   ? "#d4a520"
+    :                              "#ef4444";
+
+  const alfredLabel =
+    alfredStatus === "FALLBACK" ? "FALLBACK"
+    : alfredStatus === "DOWN"   ? "RECOVERED"
+    : apiStatus.toUpperCase();
 
   return (
     <html lang="en">
@@ -141,7 +176,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             {!collapsed && (
               <div>
                 <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "2px", color: "#666670" }}>ALFRED</div>
-                <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 8, color: "#444450" }}>{apiStatus.toUpperCase()}</div>
+                <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 8, color: dotColor }}>{alfredLabel}</div>
               </div>
             )}
           </div>
@@ -201,6 +236,24 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               EIA: {eia.isActive ? "⚠ ACTIVE" : `${eia.hours}h ${eia.mins}m`}
             </span>
           </div>
+
+          {/* ALFRED Fallback Banner — visible app-wide while in fallback or recovery */}
+          {(alfredStatus === "FALLBACK" || alfredStatus === "DOWN") && (
+            <div style={{
+              background: alfredStatus === "FALLBACK" ? "rgba(239,68,68,0.10)" : "rgba(212,165,32,0.10)",
+              borderBottom: alfredStatus === "FALLBACK"
+                ? "1px solid rgba(239,68,68,0.35)"
+                : "1px solid rgba(212,165,32,0.35)",
+              padding: "8px 24px", flexShrink: 0,
+              fontFamily: "JetBrains Mono, monospace", fontSize: 11,
+              color: alfredStatus === "FALLBACK" ? "#ef4444" : "#d4a520",
+              letterSpacing: "1px",
+            }}>
+              {alfredStatus === "FALLBACK"
+                ? "⚠ ALFRED FALLBACK MODE — last analysis used the deterministic scorer (Anthropic API unreachable)"
+                : "ALFRED RECOVERED — last analysis succeeded, fallback was used recently"}
+            </div>
+          )}
 
           {/* EIA Active Banner */}
           {eia.isActive && (

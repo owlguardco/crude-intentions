@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { scoreToConfidence } from '@/lib/alfred/confidence';
+import {
+  runFallbackScorer,
+  type FallbackScorerInput,
+} from '@/lib/alfred/fallback-scorer';
 import { kv } from '@/lib/kv';
 import { readContext, buildMarketMemoryPromptSection } from '@/lib/market-memory/context';
 import {
@@ -135,47 +139,73 @@ EIA Window Active: ${d.eiaActive ? 'YES — HARD BLOCK IN EFFECT' : 'NO'}
 
 Score this setup. Return JSON only.`;
 
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-5',
-      max_tokens: 1000,
-      system: SYSTEM_PROMPT + '\n\n' + marketMemorySection,
-      messages: [{ role: 'user', content: userPrompt }],
-    });
+    // Build the fallback-scorer input once so we can use it on outage.
+    const fallbackInput: FallbackScorerInput = {
+      price: d.price,
+      ema20: d.ema20,
+      ema50: d.ema50,
+      ema200: d.ema200,
+      rsi: d.rsi,
+      macd: d.macd,
+      vwap: d.vwap,
+      ovx: d.ovx,
+      dxy: d.dxy,
+      fvg_direction: d.fvg,
+      fvg_top: d.fvgTop,
+      fvg_bottom: d.fvgBottom,
+      session: d.session,
+      weekly_bias: d.weeklyBias ?? 'NEUTRAL',
+      eia_active: d.eiaActive ?? false,
+    };
 
-    const raw = response.content[0].type === 'text' ? response.content[0].text : '';
-    const clean = raw.replace(/```json|```/g, '').trim();
-    const result = JSON.parse(clean);
-
-    result.confidence_label = scoreToConfidence(result.score);
-
-    // Append predicted accuracy from calibration history (null until first trade closes)
-    let predicted_accuracy = null;
     try {
-      const snapshot = await kv.get<CalibrationSnapshot>('calibration:latest');
-      if (snapshot) {
-        const allEntries = (await kv.get<CalibrationEntry[]>('journal:entries')) ?? [];
-        const closedEntries = allEntries.filter(
-          (e) =>
-            e.outcome?.status === 'WIN' ||
-            e.outcome?.status === 'LOSS' ||
-            e.outcome?.status === 'SCRATCH'
-        );
-        predicted_accuracy = getPredictedAccuracy(
-          {
-            score: result.score as number,
-            grade: result.grade as string,
-            confidence_label: result.confidence_label as string,
-            session: d.session,
-          },
-          snapshot,
-          closedEntries
-        );
-      }
-    } catch (calibErr) {
-      console.warn('[ANALYZE-SETUP] Calibration read skipped:', calibErr);
-    }
+      const response = await client.messages.create({
+        model: 'claude-sonnet-4-5',
+        max_tokens: 1000,
+        system: SYSTEM_PROMPT + '\n\n' + marketMemorySection,
+        messages: [{ role: 'user', content: userPrompt }],
+      });
 
-    return NextResponse.json({ ...result, predicted_accuracy });
+      const raw = response.content[0].type === 'text' ? response.content[0].text : '';
+      const clean = raw.replace(/```json|```/g, '').trim();
+      const result = JSON.parse(clean);
+
+      result.confidence_label = scoreToConfidence(result.score);
+      result.fallback = false;
+
+      // Append predicted accuracy from calibration history (null until first trade closes)
+      let predicted_accuracy = null;
+      try {
+        const snapshot = await kv.get<CalibrationSnapshot>('calibration:latest');
+        if (snapshot) {
+          const allEntries = (await kv.get<CalibrationEntry[]>('journal:entries')) ?? [];
+          const closedEntries = allEntries.filter(
+            (e) =>
+              e.outcome?.status === 'WIN' ||
+              e.outcome?.status === 'LOSS' ||
+              e.outcome?.status === 'SCRATCH'
+          );
+          predicted_accuracy = getPredictedAccuracy(
+            {
+              score: result.score as number,
+              grade: result.grade as string,
+              confidence_label: result.confidence_label as string,
+              session: d.session,
+            },
+            snapshot,
+            closedEntries
+          );
+        }
+      } catch (calibErr) {
+        console.warn('[ANALYZE-SETUP] Calibration read skipped:', calibErr);
+      }
+
+      return NextResponse.json({ ...result, predicted_accuracy });
+    } catch (alfredErr) {
+      console.error('[ALFRED FALLBACK] Anthropic unreachable, using fallback scorer:', alfredErr);
+      const fallbackResult = runFallbackScorer(fallbackInput);
+      return NextResponse.json(fallbackResult);
+    }
 
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
