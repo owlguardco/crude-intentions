@@ -80,7 +80,7 @@ export async function PATCH(req: NextRequest) {
       );
     }
 
-    const result = updateJournalOutcome(id, parsed.data);
+    const result = await updateJournalOutcome(id, parsed.data);
 
     if (!result.success) {
       return NextResponse.json({ error: result.message }, { status: 404 });
