@@ -50,6 +50,10 @@ export const JournalWriteSchema = z.object({
   paper_trading: z.boolean().default(true),
   alfred_fallback: z.boolean().default(false),
   postmortem: z.string().nullable().default(null),
+  stop_price: z.number().finite().min(10).max(500).nullable().optional(),
+  tp1_price: z.number().finite().min(10).max(500).nullable().optional(),
+  tp2_price: z.number().finite().min(10).max(500).nullable().optional(),
+  backtest_source: z.boolean().default(false),
   mtf_consensus: z.object({
     score: z.number(),
     label: z.enum(['ALIGNED','MIXED','CONFLICTED']),

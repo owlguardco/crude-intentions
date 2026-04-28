@@ -39,6 +39,22 @@ interface WebhookSignal {
   fvg_direction: string; fvg_top: number; fvg_bottom: number; fvg_age?: number;
   session: 'NY_OPEN' | 'NY_AFTERNOON' | 'LONDON' | 'OVERLAP' | 'ASIA' | 'OFF_HOURS';
   weekly_bias?: string; htf_resistance?: number; htf_support?: number; eia_active: boolean;
+  stop_loss?: number;
+}
+
+function computeTradeLevels(direction: 'LONG' | 'SHORT' | 'NO TRADE', entry: number | null, stop: number | null | undefined) {
+  if (entry == null || stop == null || direction === 'NO TRADE') {
+    return { stop_price: null, tp1_price: null, tp2_price: null };
+  }
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  if (direction === 'LONG') {
+    const risk = entry - stop;
+    if (risk <= 0) return { stop_price: null, tp1_price: null, tp2_price: null };
+    return { stop_price: round2(stop), tp1_price: round2(entry + 2 * risk), tp2_price: round2(entry + 4 * risk) };
+  }
+  const risk = stop - entry;
+  if (risk <= 0) return { stop_price: null, tp1_price: null, tp2_price: null };
+  return { stop_price: round2(stop), tp1_price: round2(entry - 2 * risk), tp2_price: round2(entry - 4 * risk) };
 }
 interface ChecklistItem { label: string; result: 'PASS' | 'FAIL'; detail: string; }
 interface AlfredResult {
@@ -157,13 +173,17 @@ export async function POST(req: NextRequest) {
     const adversarial = isFallback
       ? { verdict: 'CONDITIONAL_PASS' as const, concerns: ['Adversarial scan skipped — fallback mode'], override_note: null }
       : await runAdversarialScan(signal, alfred);
+    const entryPrice = alfred.decision !== 'NO TRADE' ? signal.price : null;
+    const levels = computeTradeLevels(alfred.decision, entryPrice, signal.stop_loss);
     const journalWrite = await writeJournalEntry({
       rules_version: '1.8', session: signal.session, direction: alfred.decision,
       source: 'WEBHOOK', score: alfred.score,
       grade: alfred.grade as 'A+' | 'A' | 'B+' | 'B' | 'F',
       confidence_label: alfred.confidence_label as 'CONVICTION' | 'HIGH' | 'MEDIUM' | 'LOW',
-      entry_price: alfred.decision !== 'NO TRADE' ? signal.price : null,
-      stop_loss: null, take_profit_1: null, take_profit_2: null, contracts: null, risk_dollars: null,
+      entry_price: entryPrice,
+      stop_loss: levels.stop_price, take_profit_1: levels.tp1_price, take_profit_2: levels.tp2_price,
+      contracts: null, risk_dollars: null,
+      stop_price: levels.stop_price, tp1_price: levels.tp1_price, tp2_price: levels.tp2_price,
       checklist: mapChecklist(alfred.checklist),
       blocked_reasons: alfred.blocked_reasons ?? [], wait_for: alfred.wait_for ?? null,
       reasoning: alfred.reasoning,

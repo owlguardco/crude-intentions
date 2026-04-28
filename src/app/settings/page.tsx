@@ -9,6 +9,7 @@ import type {
   IdeaStatus,
   TradeIdea,
 } from '@/lib/market-memory/context';
+import FVGScanWidget from '@/components/FVGScanWidget';
 
 const C = {
   bg: '#0d0d0f',
@@ -906,6 +907,10 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+
+      <div style={{ height: 1, background: C.border, margin: '8px 0' }} />
+
+      <FVGScanWidget />
 
     </div>
   );

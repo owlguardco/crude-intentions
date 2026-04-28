@@ -39,6 +39,8 @@ export default function JournalPage() {
   const [lastCount, setLastCount] = useState(0);
   const [live, setLive] = useState(false);
   const [openOutcomeModal, setOpenOutcomeModal] = useState<TradeEntry | null>(null);
+  const [backtesting, setBacktesting] = useState(false);
+  const [backtestToast, setBacktestToast] = useState<string | null>(null);
 
   const loadJournal = async (silent = false) => {
     try {
@@ -57,6 +59,39 @@ export default function JournalPage() {
     return () => clearInterval(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastCount]);
+
+  const backtestableCount = decisions.filter(
+    (d: any) => d.outcome?.status === 'OPEN' && d.tp1_price != null && d.stop_price != null,
+  ).length;
+
+  async function runBacktest() {
+    if (backtesting || backtestableCount === 0) return;
+    setBacktesting(true);
+    try {
+      const res = await fetch('/api/journal/backtest', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY ?? '',
+        },
+        body: JSON.stringify({}),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setBacktestToast(`✗ ${json.error ?? 'Backtest failed'}`);
+      } else {
+        const wins = (json.results ?? []).filter((r: any) => r.outcome === 'WIN').length;
+        const losses = (json.results ?? []).filter((r: any) => r.outcome === 'LOSS').length;
+        setBacktestToast(`✓ ${json.resolved} resolved — ${wins} wins, ${losses} losses`);
+      }
+      await loadJournal();
+    } catch (err: any) {
+      setBacktestToast(`✗ ${err?.message ?? 'Network error'}`);
+    } finally {
+      setBacktesting(false);
+      setTimeout(() => setBacktestToast(null), 4000);
+    }
+  }
 
   async function handleSaveOutcome(id: string, payload: object) {
     const res = await fetch(`/api/journal/${id}/outcome`, {
@@ -132,6 +167,23 @@ export default function JournalPage() {
                 LIVE
               </div>
             )}
+            <button
+              onClick={runBacktest}
+              disabled={backtesting || backtestableCount === 0}
+              title={backtestableCount === 0 ? 'No OPEN entries with TP1 set' : `Backtest ${backtestableCount} OPEN entries against Yahoo Finance`}
+              style={{
+                padding: "6px 14px", background: "transparent",
+                border: `1px solid ${backtestableCount === 0 ? "#2a2a2e" : "#d4a520"}`,
+                borderRadius: 4,
+                cursor: backtesting || backtestableCount === 0 ? "not-allowed" : "pointer",
+                fontFamily: "JetBrains Mono, monospace",
+                fontSize: 9, letterSpacing: "2px",
+                color: backtestableCount === 0 ? "#444450" : "#d4a520",
+                opacity: backtesting ? 0.6 : 1,
+              }}
+            >
+              {backtesting ? "BACKTESTING..." : `BACKTEST OPEN${backtestableCount > 0 ? ` (${backtestableCount})` : ""}`}
+            </button>
             <button style={{
               padding: "6px 14px", background: "transparent", border: "1px solid #2a2a2e",
               borderRadius: 4, cursor: "pointer", fontFamily: "JetBrains Mono, monospace",
@@ -167,8 +219,8 @@ export default function JournalPage() {
                   <td style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, fontWeight: 700, color: d.direction === "LONG" ? "#22c55e" : d.direction === "SHORT" ? "#ef4444" : "#d4a520", padding: "11px 12px 11px 0", borderBottom: "1px solid #2a2a2e20" }}>{d.direction}</td>
                   <td style={{ padding: "11px 12px 11px 0", borderBottom: "1px solid #2a2a2e20" }}><GradeBadge grade={d.grade ?? "—"} /></td>
                   <td style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 12, color: "#e0e0e0", padding: "11px 12px 11px 0", borderBottom: "1px solid #2a2a2e20" }}>{d.entry_price ? `$${d.entry_price}` : "—"}</td>
-                  <td style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 12, color: "#e0e0e0", padding: "11px 12px 11px 0", borderBottom: "1px solid #2a2a2e20" }}>{d.stop_loss ? `$${d.stop_loss}` : "—"}</td>
-                  <td style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 12, color: "#e0e0e0", padding: "11px 12px 11px 0", borderBottom: "1px solid #2a2a2e20" }}>{d.take_profit_1 ? `$${d.take_profit_1}` : "—"}</td>
+                  <td style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 12, color: "#e0e0e0", padding: "11px 12px 11px 0", borderBottom: "1px solid #2a2a2e20" }}>{d.stop_loss ? `$${d.stop_loss}` : (d.outcome?.status === 'OPEN' && d.stop_price ? `$${d.stop_price}` : "—")}</td>
+                  <td style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 12, color: "#e0e0e0", padding: "11px 12px 11px 0", borderBottom: "1px solid #2a2a2e20" }}>{d.take_profit_1 ? `$${d.take_profit_1}` : (d.outcome?.status === 'OPEN' && d.tp1_price ? `$${d.tp1_price}` : "—")}</td>
                   <td style={{ padding: "11px 12px 11px 0", borderBottom: "1px solid #2a2a2e20" }}>
                     <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: 1, color: d.source === "WEBHOOK" ? "#60a5fa" : "#555" }}>{d.source ?? "MANUAL"}</span>
                   </td>
@@ -185,7 +237,14 @@ export default function JournalPage() {
                           style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "1px", padding: "3px 8px", borderRadius: 3, cursor: "pointer", background: "transparent", border: "1px solid #d4a520", color: "#d4a520" }}
                         >LOG OUTCOME</button>
                       ) : (
-                        <OutcomeBadge status={d.outcome?.status} result={d.outcome?.result} />
+                        <>
+                          <OutcomeBadge status={d.outcome?.status} result={d.outcome?.result} />
+                          {d.backtest_source && (
+                            <span title="Resolved via Yahoo Finance backtest" style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "1px", padding: "2px 5px", borderRadius: 3, color: "#888", background: "#2a2a2e40", border: "1px solid #2a2a2e" }}>
+                              BT
+                            </span>
+                          )}
+                        </>
                       )}
                       {d.postmortem && (
                         <button
@@ -273,6 +332,11 @@ export default function JournalPage() {
         onClose={() => setOpenOutcomeModal(null)}
         onSave={handleSaveOutcome}
       />
+    )}
+    {backtestToast && (
+      <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 1000, padding: "10px 16px", background: "#1a1a1e", border: "1px solid #d4a520", borderRadius: 4, fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: "#e0e0e0", letterSpacing: "1px", boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
+        {backtestToast}
+      </div>
     )}
     </>
   );
