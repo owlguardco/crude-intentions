@@ -14,6 +14,7 @@ export interface CalibrationEntry {
   stop_loss: number | null;
   contracts: number | null;
   timestamp: string;
+  checklist?: Record<string, { result: 'PASS' | 'FAIL'; detail: string }>;
   outcome: {
     status: 'OPEN' | 'WIN' | 'LOSS' | 'SCRATCH' | 'BLOCKED' | 'EXPIRED';
     result: number | null;
@@ -23,6 +24,53 @@ export interface CalibrationEntry {
     close_price: number | null;
     post_mortem: string | null;
     post_mortem_timestamp: string | null;
+  };
+}
+
+export type FactorKey =
+  | 'ema_stack_aligned'
+  | 'rsi_reset_zone'
+  | 'price_at_key_level'
+  | 'session_timing'
+  | 'market_bias'
+  | 'candle_confirmation'
+  | 'volume_profile'
+  | 'no_eia_window';
+
+export const FACTOR_KEYS: FactorKey[] = [
+  'ema_stack_aligned',
+  'rsi_reset_zone',
+  'price_at_key_level',
+  'session_timing',
+  'market_bias',
+  'candle_confirmation',
+  'volume_profile',
+  'no_eia_window',
+];
+
+export interface FactorStats {
+  trades: number;
+  wins: number;
+  win_rate: number;
+}
+
+export interface FactorBreakdown {
+  pass_stats: FactorStats;
+  fail_stats: FactorStats;
+  edge_pp: number;
+  drift_flag: boolean;
+}
+
+export interface ConfidenceBucket extends GradeBucket {
+  wilson_ci: { low: number; high: number };
+}
+
+export interface OverallStats {
+  win_rate: number;
+  rolling_30: {
+    trades: number;
+    wins: number;
+    win_rate: number;
   };
 }
 
@@ -54,7 +102,10 @@ export interface CalibrationSnapshot {
   };
   by_grade: Record<string, GradeBucket>;
   by_session: Record<string, SessionBucket>;
-  by_confidence: Record<string, GradeBucket>;
+  by_confidence: Record<string, ConfidenceBucket>;
+  by_factor: Record<FactorKey, FactorBreakdown>;
+  confidence_tiers_inverted: boolean;
+  overall: OverallStats;
 }
 
 export interface PredictedAccuracy {
@@ -100,7 +151,7 @@ export function recalculateCalibration(entries: CalibrationEntry[]): Calibration
 
   const by_grade: Record<string, GradeBucket> = {};
   const by_session: Record<string, SessionBucket> = {};
-  const by_confidence: Record<string, GradeBucket> = {};
+  const by_confidence: Record<string, ConfidenceBucket> = {};
 
   for (const entry of closed) {
     const g = entry.grade ?? 'F';
@@ -128,7 +179,14 @@ export function recalculateCalibration(entries: CalibrationEntry[]): Calibration
 
   for (const entry of closed) {
     const c = entry.confidence_label ?? 'LOW';
-    if (!by_confidence[c]) by_confidence[c] = { trades: 0, wins: 0, win_rate: 0, avg_r: 0 };
+    if (!by_confidence[c])
+      by_confidence[c] = {
+        trades: 0,
+        wins: 0,
+        win_rate: 0,
+        avg_r: 0,
+        wilson_ci: { low: 0, high: 0 },
+      };
     const prevT = by_confidence[c].trades;
     by_confidence[c].trades++;
     by_confidence[c].avg_r =
@@ -136,9 +194,68 @@ export function recalculateCalibration(entries: CalibrationEntry[]): Calibration
     if (entry.outcome.status === 'WIN') by_confidence[c].wins++;
   }
   for (const c of Object.keys(by_confidence)) {
-    by_confidence[c].win_rate =
-      by_confidence[c].trades > 0 ? by_confidence[c].wins / by_confidence[c].trades : 0;
+    const bucket = by_confidence[c];
+    bucket.win_rate = bucket.trades > 0 ? bucket.wins / bucket.trades : 0;
+    bucket.wilson_ci = wilsonCi(bucket.wins, bucket.trades);
   }
+
+  // by_factor — pass vs fail edge breakdown
+  const by_factor = {} as Record<FactorKey, FactorBreakdown>;
+  for (const key of FACTOR_KEYS) {
+    let passT = 0,
+      passW = 0,
+      failT = 0,
+      failW = 0;
+    for (const entry of closed) {
+      const item = entry.checklist?.[key];
+      const passed = item?.result === 'PASS';
+      const isWin = entry.outcome.status === 'WIN';
+      if (passed) {
+        passT++;
+        if (isWin) passW++;
+      } else {
+        failT++;
+        if (isWin) failW++;
+      }
+    }
+    const passRate = passT > 0 ? passW / passT : 0;
+    const failRate = failT > 0 ? failW / failT : 0;
+    const edge_pp = (passRate - failRate) * 100;
+    by_factor[key] = {
+      pass_stats: { trades: passT, wins: passW, win_rate: passRate },
+      fail_stats: { trades: failT, wins: failW, win_rate: failRate },
+      edge_pp,
+      drift_flag: Math.abs(edge_pp) < 5,
+    };
+  }
+
+  // confidence_tiers_inverted — HIGH win_rate < LOW win_rate
+  const high = by_confidence['HIGH'];
+  const low = by_confidence['LOW'];
+  const confidence_tiers_inverted =
+    !!high && !!low && high.trades > 0 && low.trades > 0 && high.win_rate < low.win_rate;
+
+  // rolling_30 — last 30 closed entries by close_timestamp
+  const closedSorted = [...closed].sort((a, b) => {
+    const ta = a.outcome.close_timestamp ? Date.parse(a.outcome.close_timestamp) : 0;
+    const tb = b.outcome.close_timestamp ? Date.parse(b.outcome.close_timestamp) : 0;
+    return tb - ta;
+  });
+  const last30 = closedSorted.slice(0, 30);
+  const last30Decisive = last30.filter(
+    (e) => e.outcome.status === 'WIN' || e.outcome.status === 'LOSS'
+  );
+  const last30Wins = last30Decisive.filter((e) => e.outcome.status === 'WIN').length;
+  const rolling_30 = {
+    trades: last30Decisive.length,
+    wins: last30Wins,
+    win_rate: last30Decisive.length > 0 ? (last30Wins / last30Decisive.length) * 100 : 0,
+  };
+
+  const overall: OverallStats = {
+    win_rate: win_rate * 100,
+    rolling_30,
+  };
 
   return {
     snapshot_at: new Date().toISOString(),
@@ -156,6 +273,23 @@ export function recalculateCalibration(entries: CalibrationEntry[]): Calibration
     by_grade,
     by_session,
     by_confidence,
+    by_factor,
+    confidence_tiers_inverted,
+    overall,
+  };
+}
+
+function wilsonCi(wins: number, n: number): { low: number; high: number } {
+  if (n === 0) return { low: 0, high: 0 };
+  const z = 1.96;
+  const p = wins / n;
+  const z2 = z * z;
+  const center = (p + z2 / (2 * n)) / (1 + z2 / n);
+  const margin =
+    (z * Math.sqrt((p * (1 - p)) / n + z2 / (4 * n * n))) / (1 + z2 / n);
+  return {
+    low: Math.max(0, center - margin) * 100,
+    high: Math.min(1, center + margin) * 100,
   };
 }
 
