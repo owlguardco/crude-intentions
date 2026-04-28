@@ -1,12 +1,21 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import type {
+  ActiveFvg,
+  FvgQuality,
+  FvgStatus,
+  FvgTimeframe,
+  IdeaStatus,
+  TradeIdea,
+} from '@/lib/market-memory/context';
 
 const C = {
   bg: '#0d0d0f',
   panel: '#1a1a1e',
   panel2: '#222226',
   border: '#2a2a2e',
+  rowHover: '#1e1e22',
   amber: '#d4a520',
   green: '#22c55e',
   red: '#ef4444',
@@ -14,6 +23,9 @@ const C = {
   muted: '#666670',
   dim: '#444450',
 };
+
+const STALE_HOURS_UI = 24;
+const SESSION_DISMISS_KEY = 'mc_stale_dismissed_until';
 
 const mono = { fontFamily: 'JetBrains Mono, monospace' } as const;
 
@@ -47,6 +59,28 @@ const btn = (variant: 'primary' | 'danger' | 'ghost' = 'primary') => ({
   color: variant === 'primary' ? '#0d0d0f' : C.text,
 });
 
+const tableActionBtn = (color: string) => ({
+  ...mono, fontSize: 9, letterSpacing: '1.5px', fontWeight: 700,
+  padding: '4px 8px', borderRadius: 3,
+  background: 'transparent', border: `1px solid ${color}40`,
+  color, cursor: 'pointer',
+});
+
+const th = {
+  ...mono, fontSize: 8, letterSpacing: '2px', color: C.dim,
+  textAlign: 'left' as const, padding: '8px 10px',
+  borderBottom: `1px solid ${C.border}`, fontWeight: 700,
+  textTransform: 'uppercase' as const,
+};
+
+const td = {
+  ...mono, fontSize: 11, color: C.text,
+  padding: '10px', borderBottom: `1px solid ${C.border}`,
+  verticalAlign: 'middle' as const,
+};
+
+const API_KEY = process.env.NEXT_PUBLIC_INTERNAL_API_KEY ?? '';
+
 interface MarketContext {
   schema_version: string;
   last_updated: string;
@@ -60,7 +94,8 @@ interface MarketContext {
   ema_stack: { ema20: number; ema50: number; ema200: number; alignment: string };
   oscillators: { rsi_4h: number; rsi_1h: number | null; macd_histogram: number | null };
   macro_backdrop: string;
-  active_fvgs: unknown[];
+  active_fvgs: ActiveFvg[];
+  active_trade_ideas: TradeIdea[];
   recent_closed_trades: unknown[];
   recent_win_rate: number | null;
   context_age_warning: boolean;
@@ -75,10 +110,38 @@ function fmtTime(iso: string) {
   } catch { return iso; }
 }
 
+function ageHours(iso: string): number {
+  try { return (Date.now() - new Date(iso).getTime()) / 3600000; }
+  catch { return 0; }
+}
+
+function fmtAge(hours: number): string {
+  if (hours < 1) return `${Math.round(hours * 60)}m ago`;
+  if (hours < 48) return `${Math.round(hours)}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}
+
 function biasColor(bias: string) {
   if (bias === 'LONG') return C.green;
   if (bias === 'SHORT') return C.red;
   return C.muted;
+}
+
+function authHeaders(): HeadersInit {
+  return { 'Content-Type': 'application/json', 'x-api-key': API_KEY };
+}
+
+function ideaStatusColor(s: IdeaStatus): string {
+  switch (s) {
+    case 'WATCHING':    return C.muted;
+    case 'READY':       return C.amber;
+    case 'TRIGGERED':   return C.green;
+    case 'INVALIDATED': return C.red;
+  }
+}
+
+function fvgDirColor(dir: 'bullish' | 'bearish'): string {
+  return dir === 'bullish' ? C.green : C.red;
 }
 
 export default function SettingsPage() {
@@ -87,6 +150,7 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [saveMsg, setSaveMsg] = useState('');
+  const [staleDismissed, setStaleDismissed] = useState(false);
 
   const [bias, setBias] = useState<'LONG' | 'SHORT' | 'NEUTRAL'>('NEUTRAL');
   const [biasStrength, setBiasStrength] = useState<'STRONG' | 'MODERATE' | 'WEAK'>('MODERATE');
@@ -101,6 +165,23 @@ export default function SettingsPage() {
   const [macro, setMacro] = useState('');
   const [lastBar, setLastBar] = useState('');
   const [invalidation, setInvalidation] = useState('');
+
+  // FVG add-form state
+  const [fvgDir, setFvgDir] = useState<'bullish' | 'bearish'>('bullish');
+  const [fvgTop, setFvgTop] = useState('');
+  const [fvgBottom, setFvgBottom] = useState('');
+  const [fvgTimeframe, setFvgTimeframe] = useState<FvgTimeframe>('4H');
+  const [fvgQuality, setFvgQuality] = useState<FvgQuality>('high');
+  const [fvgAge, setFvgAge] = useState('0');
+  const [fvgErr, setFvgErr] = useState('');
+
+  // Idea add-form state
+  const [ideaDir, setIdeaDir] = useState<'LONG' | 'SHORT'>('LONG');
+  const [ideaZone, setIdeaZone] = useState('');
+  const [ideaStop, setIdeaStop] = useState('');
+  const [ideaTarget, setIdeaTarget] = useState('');
+  const [ideaNotes, setIdeaNotes] = useState('');
+  const [ideaErr, setIdeaErr] = useState('');
 
   const loadContext = useCallback(async () => {
     setLoading(true);
@@ -129,6 +210,17 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => { loadContext(); }, [loadContext]);
+
+  // Honor session-only staleness dismissal
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const dismissedFor = sessionStorage.getItem(SESSION_DISMISS_KEY);
+    if (dismissedFor && ctx && dismissedFor === ctx.last_updated) {
+      setStaleDismissed(true);
+    } else {
+      setStaleDismissed(false);
+    }
+  }, [ctx]);
 
   function parseNumbers(str: string): number[] {
     return str.split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n));
@@ -165,7 +257,7 @@ export default function SettingsPage() {
       }
       const res = await fetch('/api/market-context', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders(),
         body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error('Save failed');
@@ -184,7 +276,11 @@ export default function SettingsPage() {
     if (!confirm('Reset market context to blank? This cannot be undone.')) return;
     setResetting(true);
     try {
-      await fetch('/api/market-context/reset', { method: 'POST' });
+      await fetch('/api/market-context/reset', {
+        method: 'POST',
+        headers: authHeaders(),
+      });
+      sessionStorage.removeItem(SESSION_DISMISS_KEY);
       await loadContext();
     } catch (e) {
       console.error(e);
@@ -193,19 +289,243 @@ export default function SettingsPage() {
     }
   }
 
+  // ── FVG actions (optimistic) ──
+  async function handleAddFvg() {
+    setFvgErr('');
+    const top = parseFloat(fvgTop);
+    const bottom = parseFloat(fvgBottom);
+    const ageBars = parseInt(fvgAge, 10);
+    if (isNaN(top) || isNaN(bottom)) { setFvgErr('Top and bottom must be numbers'); return; }
+    if (top <= bottom) { setFvgErr('Top must be greater than bottom'); return; }
+    if (!ctx) return;
+    if (ctx.active_fvgs.length >= 10) { setFvgErr('At limit (10) — remove one first'); return; }
+
+    const tempId = `tmp-${Date.now()}`;
+    const optimistic: ActiveFvg = {
+      id: tempId,
+      direction: fvgDir,
+      top, bottom,
+      age_bars: isNaN(ageBars) ? 0 : ageBars,
+      status: 'unfilled',
+      timeframe: fvgTimeframe,
+      quality: fvgQuality,
+      created_at: new Date().toISOString(),
+    };
+    const prev = ctx;
+    setCtx({ ...ctx, active_fvgs: [...ctx.active_fvgs, optimistic] });
+
+    try {
+      const res = await fetch('/api/market-context/fvg', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({
+          direction: fvgDir,
+          top, bottom,
+          timeframe: fvgTimeframe,
+          quality: fvgQuality,
+          age_bars: isNaN(ageBars) ? 0 : ageBars,
+        }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error ?? 'Add failed');
+      }
+      setFvgTop(''); setFvgBottom(''); setFvgAge('0');
+      await loadContext();
+    } catch (e) {
+      setCtx(prev);
+      setFvgErr(e instanceof Error ? e.message : 'Add failed');
+    }
+  }
+
+  async function handleMarkFvgFilled(id: string) {
+    if (!ctx) return;
+    const prev = ctx;
+    setCtx({
+      ...ctx,
+      active_fvgs: ctx.active_fvgs.map(f => f.id === id ? { ...f, status: 'filled' as FvgStatus } : f),
+    });
+    try {
+      const res = await fetch(`/api/market-context/fvg/${id}`, {
+        method: 'PATCH',
+        headers: authHeaders(),
+        body: JSON.stringify({ status: 'filled' }),
+      });
+      if (!res.ok) throw new Error('Patch failed');
+      await loadContext();
+    } catch {
+      setCtx(prev);
+    }
+  }
+
+  async function handleDeleteFvg(id: string) {
+    if (!ctx) return;
+    if (!confirm('Delete this FVG?')) return;
+    const prev = ctx;
+    setCtx({ ...ctx, active_fvgs: ctx.active_fvgs.filter(f => f.id !== id) });
+    try {
+      const res = await fetch(`/api/market-context/fvg/${id}`, {
+        method: 'DELETE',
+        headers: authHeaders(),
+      });
+      if (!res.ok) throw new Error('Delete failed');
+      await loadContext();
+    } catch {
+      setCtx(prev);
+    }
+  }
+
+  // ── Idea actions (optimistic) ──
+  async function handleAddIdea() {
+    setIdeaErr('');
+    const stop = parseFloat(ideaStop);
+    const target = parseFloat(ideaTarget);
+    if (!ideaZone.trim()) { setIdeaErr('Entry zone is required'); return; }
+    if (isNaN(stop) || isNaN(target)) { setIdeaErr('Stop and target must be numbers'); return; }
+    if (ideaDir === 'LONG' && target <= stop) { setIdeaErr('LONG: target must be > stop'); return; }
+    if (ideaDir === 'SHORT' && target >= stop) { setIdeaErr('SHORT: target must be < stop'); return; }
+    if (!ctx) return;
+    const liveCount = ctx.active_trade_ideas.filter(i => i.status === 'WATCHING' || i.status === 'READY').length;
+    if (liveCount >= 5) { setIdeaErr('At limit (5 active) — invalidate one first'); return; }
+
+    const tempId = `tmp-${Date.now()}`;
+    const now = new Date().toISOString();
+    const optimistic: TradeIdea = {
+      id: tempId,
+      direction: ideaDir,
+      status: 'WATCHING',
+      entry_zone: ideaZone.trim(),
+      entry_price: null,
+      target, stop,
+      notes: ideaNotes,
+      created_at: now,
+      last_updated: now,
+    };
+    const prev = ctx;
+    setCtx({ ...ctx, active_trade_ideas: [...ctx.active_trade_ideas, optimistic] });
+
+    try {
+      const res = await fetch('/api/market-context/idea', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({
+          direction: ideaDir,
+          entry_zone: ideaZone.trim(),
+          entry_price: null,
+          target, stop,
+          notes: ideaNotes,
+        }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error ?? 'Add failed');
+      }
+      setIdeaZone(''); setIdeaStop(''); setIdeaTarget(''); setIdeaNotes('');
+      await loadContext();
+    } catch (e) {
+      setCtx(prev);
+      setIdeaErr(e instanceof Error ? e.message : 'Add failed');
+    }
+  }
+
+  async function handleIdeaStatus(id: string, status: IdeaStatus) {
+    if (!ctx) return;
+    const prev = ctx;
+    setCtx({
+      ...ctx,
+      active_trade_ideas: ctx.active_trade_ideas.map(i =>
+        i.id === id ? { ...i, status, last_updated: new Date().toISOString() } : i
+      ),
+    });
+    try {
+      const res = await fetch(`/api/market-context/idea/${id}`, {
+        method: 'PATCH',
+        headers: authHeaders(),
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) throw new Error('Patch failed');
+      await loadContext();
+    } catch {
+      setCtx(prev);
+    }
+  }
+
+  async function handleDeleteIdea(id: string) {
+    if (!ctx) return;
+    if (!confirm('Delete this trade idea?')) return;
+    const prev = ctx;
+    setCtx({ ...ctx, active_trade_ideas: ctx.active_trade_ideas.filter(i => i.id !== id) });
+    try {
+      const res = await fetch(`/api/market-context/idea/${id}`, {
+        method: 'DELETE',
+        headers: authHeaders(),
+      });
+      if (!res.ok) throw new Error('Delete failed');
+      await loadContext();
+    } catch {
+      setCtx(prev);
+    }
+  }
+
+  function dismissStale() {
+    if (!ctx) return;
+    sessionStorage.setItem(SESSION_DISMISS_KEY, ctx.last_updated);
+    setStaleDismissed(true);
+  }
+
   if (loading) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300 }}>
       <div style={{ ...mono, fontSize: 10, letterSpacing: '3px', color: C.muted }}>LOADING...</div>
     </div>
   );
 
+  const ageH = ctx ? ageHours(ctx.last_updated) : 0;
+  const isStale = ctx ? ageH >= STALE_HOURS_UI : false;
+  const showStaleBanner = isStale && !staleDismissed;
+
+  // Sort ideas: WATCHING/READY first, then TRIGGERED/INVALIDATED at bottom
+  const sortedIdeas = ctx
+    ? [...ctx.active_trade_ideas].sort((a, b) => {
+        const live = (s: IdeaStatus) => s === 'WATCHING' || s === 'READY' ? 0 : 1;
+        return live(a.status) - live(b.status);
+      })
+    : [];
+
   return (
-    <div style={{ maxWidth: 720, margin: '0 auto', padding: '24px 16px' }}>
+    <div style={{ maxWidth: 820, margin: '0 auto', padding: '24px 16px' }}>
 
       <div style={{ marginBottom: 28 }}>
         <div style={{ ...mono, fontSize: 9, letterSpacing: '4px', color: C.dim, marginBottom: 6 }}>CRUDE INTENTIONS</div>
         <div style={{ ...mono, fontSize: 18, letterSpacing: '3px', color: C.text, fontWeight: 700 }}>SETTINGS</div>
       </div>
+
+      {showStaleBanner && ctx && (
+        <div style={{
+          background: `${C.amber}14`,
+          border: `1px solid ${C.amber}55`,
+          borderRadius: 6,
+          padding: '14px 18px',
+          marginBottom: 16,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 14,
+        }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ ...mono, fontSize: 10, letterSpacing: '2px', color: C.amber, fontWeight: 700, marginBottom: 4 }}>
+              ⚠ MARKET CONTEXT IS STALE
+            </div>
+            <div style={{ ...mono, fontSize: 11, color: C.text, lineHeight: 1.5 }}>
+              Last updated {fmtAge(ageH)} ({fmtTime(ctx.last_updated)}). ALFRED will treat this context as background reference only. Update the levels and bias below, or reset to a clean slate.
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <button style={tableActionBtn(C.amber)} onClick={dismissStale}>DISMISS</button>
+            <button style={tableActionBtn(C.red)} onClick={handleReset} disabled={resetting}>
+              {resetting ? '...' : 'RESET TO BLANK'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {ctx && (
         <div style={{ ...card, marginBottom: 24, borderTop: `3px solid ${biasColor(ctx.current_bias)}` }}>
@@ -223,8 +543,10 @@ export default function SettingsPage() {
             </div>
             <div>
               <div style={label}>LAST UPDATED</div>
-              <div style={{ ...mono, fontSize: 11, color: ctx.context_age_warning ? C.amber : C.text, lineHeight: 1.5 }}>{fmtTime(ctx.last_updated)}</div>
-              {ctx.context_age_warning && <div style={{ ...mono, fontSize: 9, color: C.amber, marginTop: 2 }}>⚠ STALE &gt;48h</div>}
+              <div style={{ ...mono, fontSize: 11, color: isStale ? C.amber : C.text, lineHeight: 1.5 }}>{fmtTime(ctx.last_updated)}</div>
+              <div style={{ ...mono, fontSize: 9, color: isStale ? C.amber : C.muted, marginTop: 2 }}>
+                {isStale ? `⚠ ${fmtAge(ageH)}` : fmtAge(ageH)}
+              </div>
             </div>
           </div>
           {ctx.macro_backdrop && (
@@ -328,6 +650,246 @@ export default function SettingsPage() {
             <span style={{ ...mono, fontSize: 10, letterSpacing: '2px', color: saveMsg === 'SAVED' ? C.green : C.red }}>
               {saveMsg}
             </span>
+          )}
+        </div>
+      </div>
+
+      {/* ── ACTIVE FVGs ───────────────────────────────────────────── */}
+      <div style={card}>
+        <div style={{ ...sectionTitle, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span>ACTIVE FVGs</span>
+          <span style={{ ...mono, fontSize: 9, color: C.dim }}>
+            {ctx?.active_fvgs.length ?? 0} / 10
+          </span>
+        </div>
+
+        {ctx && ctx.active_fvgs.length === 0 ? (
+          <div style={{ ...mono, fontSize: 11, color: C.muted, padding: '12px 0', textAlign: 'center' }}>
+            No active FVGs — add one below
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto', marginBottom: 16 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th style={th}>Direction</th>
+                  <th style={th}>Range</th>
+                  <th style={th}>TF</th>
+                  <th style={th}>Quality</th>
+                  <th style={th}>Status</th>
+                  <th style={th}>Age</th>
+                  <th style={{ ...th, textAlign: 'right' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ctx?.active_fvgs.map(f => (
+                  <tr key={f.id} style={{ opacity: f.status === 'filled' ? 0.5 : 1 }}>
+                    <td style={{ ...td, color: fvgDirColor(f.direction), fontWeight: 700 }}>
+                      {f.direction.toUpperCase()}
+                    </td>
+                    <td style={td}>{f.bottom}–{f.top}</td>
+                    <td style={td}>{f.timeframe}</td>
+                    <td style={{ ...td, color: C.muted }}>{f.quality}</td>
+                    <td style={{ ...td, color: f.status === 'filled' ? C.muted : f.status === 'partially_filled' ? C.amber : C.text }}>
+                      {f.status}
+                    </td>
+                    <td style={{ ...td, color: C.muted }}>{f.age_bars} bars</td>
+                    <td style={{ ...td, textAlign: 'right' }}>
+                      <div style={{ display: 'inline-flex', gap: 6 }}>
+                        {f.status !== 'filled' && (
+                          <button style={tableActionBtn(C.amber)} onClick={() => handleMarkFvgFilled(f.id)}>
+                            MARK FILLED
+                          </button>
+                        )}
+                        <button style={tableActionBtn(C.red)} onClick={() => handleDeleteFvg(f.id)}>
+                          DELETE
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <div style={{ paddingTop: 14, borderTop: `1px solid ${C.border}` }}>
+          <div style={{ ...mono, fontSize: 9, letterSpacing: '2px', color: C.dim, marginBottom: 10 }}>ADD FVG</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
+            <div>
+              <span style={label}>Direction</span>
+              <select value={fvgDir} onChange={e => setFvgDir(e.target.value as 'bullish' | 'bearish')} style={{ ...input, color: fvgDirColor(fvgDir) }}>
+                <option value="bullish">BULLISH</option>
+                <option value="bearish">BEARISH</option>
+              </select>
+            </div>
+            <div>
+              <span style={label}>Top</span>
+              <input style={input} value={fvgTop} onChange={e => setFvgTop(e.target.value)} placeholder="78.55" />
+            </div>
+            <div>
+              <span style={label}>Bottom</span>
+              <input style={input} value={fvgBottom} onChange={e => setFvgBottom(e.target.value)} placeholder="78.20" />
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 10, alignItems: 'end' }}>
+            <div>
+              <span style={label}>Timeframe</span>
+              <select value={fvgTimeframe} onChange={e => setFvgTimeframe(e.target.value as FvgTimeframe)} style={input}>
+                <option value="4H">4H</option>
+                <option value="1H">1H</option>
+                <option value="15min">15min</option>
+              </select>
+            </div>
+            <div>
+              <span style={label}>Quality</span>
+              <select value={fvgQuality} onChange={e => setFvgQuality(e.target.value as FvgQuality)} style={input}>
+                <option value="high">HIGH</option>
+                <option value="medium">MEDIUM</option>
+                <option value="low">LOW</option>
+              </select>
+            </div>
+            <div>
+              <span style={label}>Age (bars)</span>
+              <input style={input} value={fvgAge} onChange={e => setFvgAge(e.target.value)} placeholder="0" />
+            </div>
+            <button
+              style={{ ...tableActionBtn(C.green), padding: '9px 16px', fontSize: 10 }}
+              onClick={handleAddFvg}
+              disabled={ctx ? ctx.active_fvgs.length >= 10 : true}
+            >
+              ADD FVG
+            </button>
+          </div>
+          {fvgErr && (
+            <div style={{ ...mono, fontSize: 10, color: C.red, marginTop: 8 }}>{fvgErr}</div>
+          )}
+          {ctx && ctx.active_fvgs.length >= 10 && (
+            <div style={{ ...mono, fontSize: 10, color: C.amber, marginTop: 8 }}>
+              ⚠ At limit (10) — remove an FVG before adding
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── TRADE IDEAS ───────────────────────────────────────────── */}
+      <div style={card}>
+        <div style={{ ...sectionTitle, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span>TRADE IDEAS</span>
+          <span style={{ ...mono, fontSize: 9, color: C.dim }}>
+            {ctx?.active_trade_ideas.filter(i => i.status === 'WATCHING' || i.status === 'READY').length ?? 0} active / 5
+          </span>
+        </div>
+
+        {ctx && ctx.active_trade_ideas.length === 0 ? (
+          <div style={{ ...mono, fontSize: 11, color: C.muted, padding: '12px 0', textAlign: 'center' }}>
+            No trade ideas — add one below
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto', marginBottom: 16 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th style={th}>Status</th>
+                  <th style={th}>Direction</th>
+                  <th style={th}>Entry Zone</th>
+                  <th style={th}>Stop</th>
+                  <th style={th}>Target</th>
+                  <th style={th}>Notes</th>
+                  <th style={{ ...th, textAlign: 'right' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedIdeas.map(i => {
+                  const isDone = i.status === 'TRIGGERED' || i.status === 'INVALIDATED';
+                  return (
+                    <tr key={i.id} style={{ opacity: isDone ? 0.5 : 1 }}>
+                      <td style={{ ...td, color: ideaStatusColor(i.status), fontWeight: 700 }}>
+                        {i.status}
+                      </td>
+                      <td style={{ ...td, color: i.direction === 'LONG' ? C.green : C.red, fontWeight: 700 }}>
+                        {i.direction}
+                      </td>
+                      <td style={td}>{i.entry_zone}</td>
+                      <td style={{ ...td, color: C.red }}>{i.stop}</td>
+                      <td style={{ ...td, color: C.green }}>{i.target}</td>
+                      <td style={{ ...td, color: C.muted, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {i.notes || '—'}
+                      </td>
+                      <td style={{ ...td, textAlign: 'right' }}>
+                        <div style={{ display: 'inline-flex', gap: 6 }}>
+                          {i.status === 'WATCHING' && (
+                            <>
+                              <button style={tableActionBtn(C.amber)} onClick={() => handleIdeaStatus(i.id, 'READY')}>
+                                MARK READY
+                              </button>
+                              <button style={tableActionBtn(C.red)} onClick={() => handleIdeaStatus(i.id, 'INVALIDATED')}>
+                                INVALIDATE
+                              </button>
+                            </>
+                          )}
+                          {i.status === 'READY' && (
+                            <>
+                              <button style={tableActionBtn(C.green)} onClick={() => handleIdeaStatus(i.id, 'TRIGGERED')}>
+                                MARK TRIGGERED
+                              </button>
+                              <button style={tableActionBtn(C.red)} onClick={() => handleIdeaStatus(i.id, 'INVALIDATED')}>
+                                INVALIDATE
+                              </button>
+                            </>
+                          )}
+                          {isDone && (
+                            <button style={tableActionBtn(C.muted)} onClick={() => handleDeleteIdea(i.id)}>
+                              DELETE
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <div style={{ paddingTop: 14, borderTop: `1px solid ${C.border}` }}>
+          <div style={{ ...mono, fontSize: 9, letterSpacing: '2px', color: C.dim, marginBottom: 10 }}>ADD TRADE IDEA</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
+            <div>
+              <span style={label}>Direction</span>
+              <select value={ideaDir} onChange={e => setIdeaDir(e.target.value as 'LONG' | 'SHORT')} style={{ ...input, color: ideaDir === 'LONG' ? C.green : C.red }}>
+                <option value="LONG">LONG</option>
+                <option value="SHORT">SHORT</option>
+              </select>
+            </div>
+            <div>
+              <span style={label}>Entry Zone</span>
+              <input style={input} value={ideaZone} onChange={e => setIdeaZone(e.target.value)} placeholder="77.80–78.00" />
+            </div>
+            <div>
+              <span style={label}>Stop</span>
+              <input style={input} value={ideaStop} onChange={e => setIdeaStop(e.target.value)} placeholder="77.40" />
+            </div>
+            <div>
+              <span style={label}>Target</span>
+              <input style={input} value={ideaTarget} onChange={e => setIdeaTarget(e.target.value)} placeholder="80.20" />
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'end' }}>
+            <div>
+              <span style={label}>Notes</span>
+              <input style={input} value={ideaNotes} onChange={e => setIdeaNotes(e.target.value)} placeholder="FVG retest setup, watching for rejection at zone" />
+            </div>
+            <button
+              style={{ ...tableActionBtn(C.green), padding: '9px 16px', fontSize: 10 }}
+              onClick={handleAddIdea}
+            >
+              ADD IDEA
+            </button>
+          </div>
+          {ideaErr && (
+            <div style={{ ...mono, fontSize: 10, color: C.red, marginTop: 8 }}>{ideaErr}</div>
           )}
         </div>
       </div>

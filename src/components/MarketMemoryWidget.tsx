@@ -35,6 +35,16 @@ interface MarketCtx {
   last_updated: string;
 }
 
+const STALE_HOURS_UI = 24;
+
+function isStaleClient(iso: string): boolean {
+  try {
+    return (Date.now() - new Date(iso).getTime()) / 3600000 >= STALE_HOURS_UI;
+  } catch {
+    return false;
+  }
+}
+
 function biasColor(bias: string): string {
   if (bias === "LONG") return C.green;
   if (bias === "SHORT") return C.red;
@@ -146,7 +156,7 @@ export default function MarketMemoryWidget() {
         }}
       >
         <span>ALFRED MEMORY</span>
-        {ctx.context_age_warning && (
+        {(ctx.context_age_warning || isStaleClient(ctx.last_updated)) && (
           <span
             style={{
               ...mono,
