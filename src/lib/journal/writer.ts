@@ -1,22 +1,16 @@
-import { Redis } from '@upstash/redis';
+import fs from 'fs';
+import path from 'path';
 import crypto from 'crypto';
 import type { JournalWriteInput } from '@/lib/validation/journal-schema';
 
-// ─── Redis client ─────────────────────────────────────────────────────────────
-// Uses kv_REDIS_URL from env (set by Vercel Redis integration)
-const redis = new Redis({
-  url: process.env.kv_REDIS_URL ?? process.env.KV_REDIS_URL ?? '',
-  token: '', // Upstash token not needed for Redis URL auth — handled in URL
-});
-
-const JOURNAL_KEY     = 'journal:entries';
-const SUMMARY_KEY     = 'journal:summary';
+// ─── File path ────────────────────────────────────────────────────────────────
+const JOURNAL_FILE = path.join(process.cwd(), 'src', 'data', 'safety_check_log.json');
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export interface JournalEntry extends JournalWriteInput {
-  id:             string;
-  timestamp:      string;
-  integrity_hash: string;
+  id:              string;
+  timestamp:       string;
+  integrity_hash:  string;
   outcome: {
     status:                'OPEN' | 'WIN' | 'LOSS' | 'SCRATCH' | 'BLOCKED' | 'EXPIRED';
     result:                number | null;
@@ -28,71 +22,83 @@ export interface JournalEntry extends JournalWriteInput {
   };
 }
 
-export interface JournalSummary {
-  total_evaluations: number;
-  trades_taken:      number;
-  trades_blocked:    number;
-  win:               number;
-  loss:              number;
-  win_rate_pct:      number;
-  last_updated:      string;
-}
-
-export interface JournalData {
+interface JournalFile {
   schema_version: string;
-  decisions:      JournalEntry[];
-  summary:        JournalSummary;
+  decisions: JournalEntry[];
+  summary: {
+    total_evaluations: number;
+    trades_taken:      number;
+    trades_blocked:    number;
+    win:               number;
+    loss:              number;
+    win_rate_pct:      number;
+    last_updated:      string;
+  };
 }
 
-// ─── Read journal ─────────────────────────────────────────────────────────────
-export async function readJournal(): Promise<JournalData> {
-  try {
-    const [entries, summary] = await Promise.all([
-      redis.get<JournalEntry[]>(JOURNAL_KEY),
-      redis.get<JournalSummary>(SUMMARY_KEY),
-    ]);
-    return {
-      schema_version: '1.1',
-      decisions:      entries ?? [],
-      summary:        summary ?? {
-        total_evaluations: 0, trades_taken: 0, trades_blocked: 0,
-        win: 0, loss: 0, win_rate_pct: 0, last_updated: '',
-      },
-    };
-  } catch {
+// ─── Read journal from disk ───────────────────────────────────────────────────
+export function readJournal(): JournalFile {
+  if (!fs.existsSync(JOURNAL_FILE)) {
     return {
       schema_version: '1.1',
       decisions: [],
-      summary: { total_evaluations: 0, trades_taken: 0, trades_blocked: 0, win: 0, loss: 0, win_rate_pct: 0, last_updated: '' },
+      summary: {
+        total_evaluations: 0,
+        trades_taken: 0,
+        trades_blocked: 0,
+        win: 0,
+        loss: 0,
+        win_rate_pct: 0,
+        last_updated: '',
+      },
     };
   }
+
+  const raw = fs.readFileSync(JOURNAL_FILE, 'utf-8');
+  const parsed = JSON.parse(raw) as JournalFile;
+
+  // Migrate v1.0 → v1.1 on read if needed
+  if (!parsed.schema_version || parsed.schema_version === '1.0') {
+    parsed.schema_version = '1.1';
+  }
+
+  return parsed;
 }
 
-// ─── Generate entry ID ────────────────────────────────────────────────────────
-function generateId(entries: JournalEntry[]): string {
-  const today = new Date().toISOString().slice(0, 10);
-  const n = entries.filter(e => e.id?.startsWith(`CI-${today}`)).length;
-  return `CI-${today}-${(n + 1).toString().padStart(3, '0')}`;
+// ─── Generate entry ID: CI-YYYY-MM-DD-NNN ────────────────────────────────────
+function generateId(journal: JournalFile): string {
+  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const todayEntries = journal.decisions.filter(
+    (d) => d.id && d.id.startsWith(`CI-${today}`)
+  );
+  const seq = (todayEntries.length + 1).toString().padStart(3, '0');
+  return `CI-${today}-${seq}`;
 }
 
 // ─── SHA-256 integrity hash ───────────────────────────────────────────────────
+// Hash input: id + timestamp + direction + score + entry_price (or "null")
 export function computeIntegrityHash(
-  id: string, timestamp: string, direction: string,
-  score: number, entry_price: number | null
+  id: string,
+  timestamp: string,
+  direction: string,
+  score: number,
+  entry_price: number | null
 ): string {
   const payload = `${id}|${timestamp}|${direction}|${score}|${entry_price ?? 'null'}`;
   return crypto.createHash('sha256').update(payload).digest('hex');
 }
 
-// ─── Recompute summary ────────────────────────────────────────────────────────
-function recomputeSummary(entries: JournalEntry[]): JournalSummary {
-  const taken   = entries.filter(e => e.direction !== 'NO TRADE');
-  const blocked = entries.filter(e => e.direction === 'NO TRADE');
-  const wins    = entries.filter(e => e.outcome?.status === 'WIN');
-  const losses  = entries.filter(e => e.outcome?.status === 'LOSS');
-  const closed  = wins.length + losses.length;
+// ─── Recompute summary stats from decisions array ────────────────────────────
+function recomputeSummary(decisions: JournalEntry[]): JournalFile['summary'] {
+  const real = decisions.filter((d) => !('_comment' in d));
+  const taken  = real.filter((d) => d.direction !== 'NO TRADE');
+  const blocked = real.filter((d) => d.direction === 'NO TRADE');
+  const wins   = real.filter((d) => d.outcome?.status === 'WIN');
+  const losses = real.filter((d) => d.outcome?.status === 'LOSS');
+  const closed = wins.length + losses.length;
+
   return {
-    total_evaluations: entries.length,
+    total_evaluations: real.length,
     trades_taken:      taken.length,
     trades_blocked:    blocked.length,
     win:               wins.length,
@@ -102,25 +108,32 @@ function recomputeSummary(entries: JournalEntry[]): JournalSummary {
   };
 }
 
-// ─── Write journal entry ──────────────────────────────────────────────────────
+// ─── Main write function ──────────────────────────────────────────────────────
 export interface WriteResult {
-  success:        boolean;
-  id:             string;
+  success: boolean;
+  id:      string;
   integrity_hash: string;
-  entry:          JournalEntry;
+  entry:   JournalEntry;
 }
 
-export async function writeJournalEntry(input: JournalWriteInput): Promise<WriteResult> {
-  const journal   = await readJournal();
-  const id        = generateId(journal.decisions);
+export function writeJournalEntry(input: JournalWriteInput): WriteResult {
+  const journal = readJournal();
+  const id        = generateId(journal);
   const timestamp = new Date().toISOString();
-  const integrity_hash = computeIntegrityHash(id, timestamp, input.direction, input.score, input.entry_price);
+  const integrity_hash = computeIntegrityHash(
+    id,
+    timestamp,
+    input.direction,
+    input.score,
+    input.entry_price
+  );
 
   const entry: JournalEntry = {
     ...input,
     id,
     timestamp,
     integrity_hash,
+    // Outcome always starts OPEN on creation
     outcome: {
       status:                input.direction === 'NO TRADE' ? 'BLOCKED' : 'OPEN',
       result:                null,
@@ -132,48 +145,58 @@ export async function writeJournalEntry(input: JournalWriteInput): Promise<Write
     },
   };
 
-  const updatedEntries = [...journal.decisions, entry];
-  const updatedSummary = recomputeSummary(updatedEntries);
+  // Remove any example entries (entries with _comment) on first real write
+  const cleanDecisions = journal.decisions.filter((d) => !('_comment' in d));
+  cleanDecisions.push(entry);
 
-  await Promise.all([
-    redis.set(JOURNAL_KEY, updatedEntries),
-    redis.set(SUMMARY_KEY, updatedSummary),
-  ]);
+  const updated: JournalFile = {
+    schema_version: '1.1',
+    decisions:      cleanDecisions,
+    summary:        recomputeSummary(cleanDecisions),
+  };
+
+  fs.writeFileSync(JOURNAL_FILE, JSON.stringify(updated, null, 2), 'utf-8');
 
   return { success: true, id, integrity_hash, entry };
 }
 
-// ─── Update outcome ───────────────────────────────────────────────────────────
+// ─── Update outcome for a closed trade ───────────────────────────────────────
 export interface OutcomeUpdateInput {
   status:          'WIN' | 'LOSS' | 'SCRATCH' | 'EXPIRED';
   close_price:     number;
   close_timestamp: string;
-  result:          number;
+  result:          number;   // ticks
   result_dollars:  number;
 }
 
-export async function updateJournalOutcome(
+export function updateJournalOutcome(
   id: string,
   update: OutcomeUpdateInput
-): Promise<{ success: boolean; message: string }> {
-  const journal = await readJournal();
-  const idx = journal.decisions.findIndex(e => e.id === id);
+): { success: boolean; message: string } {
+  const journal = readJournal();
+  const idx = journal.decisions.findIndex((d) => d.id === id);
 
-  if (idx === -1) return { success: false, message: `Entry ${id} not found` };
+  if (idx === -1) {
+    return { success: false, message: `Entry ${id} not found` };
+  }
 
   journal.decisions[idx].outcome = {
     ...journal.decisions[idx].outcome,
-    ...update,
+    status:          update.status,
+    close_price:     update.close_price,
+    close_timestamp: update.close_timestamp,
+    result:          update.result,
+    result_dollars:  update.result_dollars,
+    // post_mortem is written separately by Prompt 10
     post_mortem:           journal.decisions[idx].outcome?.post_mortem ?? null,
     post_mortem_timestamp: journal.decisions[idx].outcome?.post_mortem_timestamp ?? null,
   };
 
-  const updatedSummary = recomputeSummary(journal.decisions);
+  const updated: JournalFile = {
+    ...journal,
+    summary: recomputeSummary(journal.decisions),
+  };
 
-  await Promise.all([
-    redis.set(JOURNAL_KEY, journal.decisions),
-    redis.set(SUMMARY_KEY, updatedSummary),
-  ]);
-
+  fs.writeFileSync(JOURNAL_FILE, JSON.stringify(updated, null, 2), 'utf-8');
   return { success: true, message: `Outcome updated for ${id}` };
 }
