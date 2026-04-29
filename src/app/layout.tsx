@@ -73,6 +73,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   } | null>(null);
   const [geoExpanded, setGeoExpanded] = useState(false);
   const [clPrice, setClPrice] = useState<number | null>(null);
+  const [clSessionOpen, setClSessionOpen] = useState<number | null>(null);
   const [ovxPrice, setOvxPrice] = useState<number | null>(null);
 
   useEffect(() => {
@@ -107,6 +108,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         const json = await res.json();
         if (typeof json.price === "number" && Number.isFinite(json.price)) {
           setClPrice(json.price);
+        }
+        if (typeof json.session_open === "number" && Number.isFinite(json.session_open)) {
+          setClSessionOpen(json.session_open);
+        } else if (json.session_open === null) {
+          setClSessionOpen(null);
         }
       } catch {
         // hold last good value
@@ -294,6 +300,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 18, fontWeight: 700, color: "#e0e0e0" }}>
               {clPrice != null ? clPrice.toFixed(2) : "—"}
             </span>
+            {clPrice != null && clSessionOpen != null && clSessionOpen !== 0 && (() => {
+              const deltaPct = ((clPrice - clSessionOpen) / clSessionOpen) * 100;
+              const color = deltaPct > 0 ? "#22c55e" : deltaPct < 0 ? "#ef4444" : "#666670";
+              const sign = deltaPct > 0 ? "+" : "";
+              return (
+                <span style={{
+                  fontFamily: "JetBrains Mono, monospace", fontSize: 13, color,
+                }}>
+                  {sign}{deltaPct.toFixed(2)}%
+                </span>
+              );
+            })()}
 
             <span style={{
               fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "2px",
