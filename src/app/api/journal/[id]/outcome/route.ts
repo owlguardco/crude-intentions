@@ -17,10 +17,14 @@ import {
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const PatchBodySchema = z.object({
+const ClosePatchSchema = z.object({
   close_price: z.number().finite().min(10).max(500),
   run_postmortem: z.boolean().optional().default(false),
 });
+
+const PostmortemPatchSchema = z.object({
+  postmortem: z.string().min(1).max(4000),
+}).strict();
 
 function firePostMortem(req: NextRequest, id: string): void {
   const proto = req.headers.get('x-forwarded-proto') ?? 'http';
@@ -48,7 +52,22 @@ export async function PATCH(
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
-  const parsed = PatchBodySchema.safeParse(body);
+  // Postmortem-only branch — writes the postmortem field without
+  // touching outcome status or recalculating calibration.
+  const pmParsed = PostmortemPatchSchema.safeParse(body);
+  if (pmParsed.success) {
+    type StoredEntryWithPm = CalibrationEntry & { postmortem?: string | null };
+    const entries = (await kv.get<StoredEntryWithPm[]>('journal:entries')) ?? [];
+    const idx = entries.findIndex((e) => e.id === id);
+    if (idx === -1) {
+      return NextResponse.json({ error: `Entry ${id} not found` }, { status: 404 });
+    }
+    entries[idx] = { ...entries[idx], postmortem: pmParsed.data.postmortem };
+    await kv.set('journal:entries', entries);
+    return NextResponse.json({ ok: true, postmortem_written: true });
+  }
+
+  const parsed = ClosePatchSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
       { error: 'Invalid input', details: parsed.error.flatten() },

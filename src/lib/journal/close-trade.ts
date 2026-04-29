@@ -11,6 +11,7 @@ import {
   updateContextFromOutcome,
   type ClosedTradeForContext,
 } from '@/lib/market-memory/context';
+import { firePostMortem } from '@/lib/journal/post-mortem';
 
 export type CloseStatus = 'WIN' | 'LOSS' | 'SCRATCH';
 
@@ -102,6 +103,9 @@ export async function closeTrade(input: CloseTradeInput): Promise<CloseTradeResu
   const ctx = await readContext(kv);
   const updatedCtx = updateContextFromOutcome(ctx, closedTrade);
   await writeContext(kv, updatedCtx);
+
+  // Auto-fire post-mortem on every close. Fire-and-forget — never blocks.
+  firePostMortem(updated);
 
   return {
     ok: true,
