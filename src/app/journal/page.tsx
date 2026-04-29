@@ -65,6 +65,71 @@ export default function JournalPage() {
   const [calNotes, setCalNotes] = useState<string[]>([]);
   const [calLoaded, setCalLoaded] = useState(false);
 
+  // Import modal state
+  const [importOpen, setImportOpen] = useState(false);
+  const [importRaw, setImportRaw] = useState("");
+  const [importValidated, setImportValidated] = useState<{ ok: boolean; count: number; message: string } | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importToast, setImportToast] = useState<string | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+
+  function validateImport() {
+    setImportError(null);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(importRaw);
+    } catch {
+      setImportValidated({ ok: false, count: 0, message: "✗ Invalid JSON" });
+      return;
+    }
+    if (!Array.isArray(parsed)) {
+      setImportValidated({ ok: false, count: 0, message: "✗ Expected JSON array" });
+      return;
+    }
+    if (parsed.length === 0) {
+      setImportValidated({ ok: false, count: 0, message: "✗ Array is empty" });
+      return;
+    }
+    if (parsed.length > 50) {
+      setImportValidated({ ok: false, count: parsed.length, message: `✗ ${parsed.length} trades (max 50 per import)` });
+      return;
+    }
+    setImportValidated({ ok: true, count: parsed.length, message: `✓ ${parsed.length} valid trades ready to import` });
+  }
+
+  async function runImport() {
+    if (!importValidated?.ok || importing) return;
+    let trades: unknown;
+    try { trades = JSON.parse(importRaw); } catch { setImportError("Invalid JSON"); return; }
+    setImporting(true);
+    setImportError(null);
+    try {
+      const res = await fetch("/api/journal/import", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": process.env.NEXT_PUBLIC_INTERNAL_API_KEY ?? "",
+        },
+        body: JSON.stringify({ trades }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setImportError(json?.error ?? "Import failed");
+        return;
+      }
+      setImportToast(`✓ ${json.imported} imported, ${json.skipped} skipped`);
+      setImportOpen(false);
+      setImportRaw("");
+      setImportValidated(null);
+      await loadJournal();
+    } catch (err: any) {
+      setImportError(err?.message ?? "Network error");
+    } finally {
+      setImporting(false);
+      setTimeout(() => setImportToast(null), 4000);
+    }
+  }
+
   const loadJournal = async (silent = false) => {
     try {
       const res = await fetch('/api/journal');
@@ -215,6 +280,7 @@ export default function JournalPage() {
           backtesting={backtesting}
           backtestableCount={backtestableCount}
           runBacktest={runBacktest}
+          openImport={() => setImportOpen(true)}
         />
       )}
     </div>
@@ -229,6 +295,78 @@ export default function JournalPage() {
     {backtestToast && (
       <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 1000, padding: "10px 16px", background: "#1a1a1e", border: "1px solid #d4a520", borderRadius: 4, fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: "#e0e0e0", letterSpacing: "1px", boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
         {backtestToast}
+      </div>
+    )}
+    {importToast && (
+      <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 1000, padding: "10px 16px", background: "#1a1a1e", border: "1px solid #22c55e", borderRadius: 4, fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: "#e0e0e0", letterSpacing: "1px", boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
+        {importToast}
+      </div>
+    )}
+    {importOpen && (
+      <div
+        style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
+        onClick={(e) => { if (e.target === e.currentTarget) setImportOpen(false); }}
+      >
+        <div style={{ background: "#1a1a1e", border: "1px solid #2a2a2e", borderRadius: 6, padding: 24, width: 640, maxWidth: "calc(100vw - 32px)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "3px", color: "#d4a520" }}>BULK IMPORT</div>
+            <button
+              onClick={() => setImportOpen(false)}
+              style={{ background: "transparent", border: "none", color: "#666670", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: "0 4px" }}
+            >×</button>
+          </div>
+          <textarea
+            value={importRaw}
+            onChange={(e) => { setImportRaw(e.target.value); setImportValidated(null); setImportError(null); }}
+            placeholder="Paste JSON array of trade objects. Each object follows the journal entry schema. Minimum fields: direction, session, score, grade, source."
+            style={{
+              width: "100%", minHeight: 220, resize: "vertical",
+              background: "#111115", border: "1px solid #2a2a2e", borderRadius: 4,
+              color: "#e0e0e0", fontFamily: "JetBrains Mono, monospace", fontSize: 11,
+              padding: "10px 12px", outline: "none", boxSizing: "border-box",
+              lineHeight: 1.5,
+            }}
+          />
+          {importValidated && (
+            <div style={{
+              marginTop: 10, fontFamily: "JetBrains Mono, monospace", fontSize: 11, letterSpacing: "1px",
+              color: importValidated.ok ? "#d4a520" : "#ef4444",
+            }}>
+              {importValidated.message}
+            </div>
+          )}
+          {importError && (
+            <div style={{ marginTop: 10, fontFamily: "JetBrains Mono, monospace", fontSize: 11, letterSpacing: "1px", color: "#ef4444" }}>
+              ✗ {importError}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+            <button
+              onClick={validateImport}
+              disabled={!importRaw.trim() || importing}
+              style={{
+                padding: "9px 16px", flex: 1,
+                background: "transparent", border: "1px solid #2a2a2e", borderRadius: 4,
+                cursor: !importRaw.trim() || importing ? "not-allowed" : "pointer",
+                fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "2px",
+                color: "#888", fontWeight: 700,
+              }}
+            >VALIDATE</button>
+            <button
+              onClick={runImport}
+              disabled={!importValidated?.ok || importing}
+              style={{
+                padding: "9px 16px", flex: 1,
+                background: !importValidated?.ok || importing ? "#2a2a2e" : "#d4a520",
+                border: "none", borderRadius: 4,
+                cursor: !importValidated?.ok || importing ? "not-allowed" : "pointer",
+                fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "2px",
+                color: !importValidated?.ok || importing ? "#666670" : "#0d0d0f",
+                fontWeight: 700,
+              }}
+            >{importing ? "IMPORTING..." : "IMPORT"}</button>
+          </div>
+        </div>
       </div>
     )}
     </>
@@ -254,12 +392,13 @@ interface JournalViewProps {
   backtesting: boolean;
   backtestableCount: number;
   runBacktest: () => void;
+  openImport: () => void;
 }
 
 function JournalView({
   filtered, filter, setFilter, live, total, taken, blocked, winRate, avgScore,
   expanded, setExpanded, expandedPostmortem, setExpandedPostmortem,
-  setOpenOutcomeModal, backtesting, backtestableCount, runBacktest,
+  setOpenOutcomeModal, backtesting, backtestableCount, runBacktest, openImport,
 }: JournalViewProps) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -323,6 +462,14 @@ function JournalView({
             >
               {backtesting ? "BACKTESTING..." : `BACKTEST OPEN${backtestableCount > 0 ? ` (${backtestableCount})` : ""}`}
             </button>
+            <button
+              onClick={openImport}
+              style={{
+                padding: "6px 14px", background: "transparent", border: "1px solid #d4a520",
+                borderRadius: 4, cursor: "pointer", fontFamily: "JetBrains Mono, monospace",
+                fontSize: 9, letterSpacing: "2px", color: "#d4a520",
+              }}
+            >IMPORT</button>
             <button style={{
               padding: "6px 14px", background: "transparent", border: "1px solid #2a2a2e",
               borderRadius: 4, cursor: "pointer", fontFamily: "JetBrains Mono, monospace",

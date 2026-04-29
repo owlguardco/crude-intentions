@@ -24,7 +24,7 @@ export const JournalWriteSchema = z.object({
   rules_version: z.string().min(1).max(20),
   session: z.enum(['NY_OPEN','NY_AFTERNOON','LONDON','OVERLAP','ASIA','OFF_HOURS']),
   direction: z.enum(['LONG','SHORT','NO TRADE']),
-  source: z.enum(['WEBHOOK','MANUAL']).default('MANUAL'),
+  source: z.enum(['WEBHOOK','MANUAL','IMPORT']).default('MANUAL'),
   score: z.number().int().min(0).max(10),
   grade: z.enum(['A+','A','B+','B','F']),
   confidence_label: z.enum(['CONVICTION','HIGH','MEDIUM','LOW']),
