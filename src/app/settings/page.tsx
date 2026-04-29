@@ -10,6 +10,7 @@ import type {
   TradeIdea,
 } from '@/lib/market-memory/context';
 import FVGScanWidget from '@/components/FVGScanWidget';
+import type { FvgScanSnapshot, ScannedFVG } from '@/app/api/fvg-scan-auto/route';
 
 const C = {
   bg: '#0d0d0f',
@@ -167,6 +168,11 @@ export default function SettingsPage() {
   const [lastBar, setLastBar] = useState('');
   const [invalidation, setInvalidation] = useState('');
 
+  // FVG auto-scan state
+  const [fvgScan, setFvgScan] = useState<FvgScanSnapshot | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [scanToast, setScanToast] = useState<string | null>(null);
+
   // FVG add-form state
   const [fvgDir, setFvgDir] = useState<'bullish' | 'bearish'>('bullish');
   const [fvgTop, setFvgTop] = useState('');
@@ -211,6 +217,48 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => { loadContext(); }, [loadContext]);
+
+  const loadFvgScan = useCallback(async () => {
+    try {
+      const res = await fetch('/api/fvg-scan-auto');
+      if (!res.ok) return;
+      const json = (await res.json()) as FvgScanSnapshot;
+      setFvgScan(json);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => { loadFvgScan(); }, [loadFvgScan]);
+
+  async function runAutoScan() {
+    if (scanning) return;
+    setScanning(true);
+    try {
+      const res = await fetch('/api/fvg-scan-auto', {
+        method: 'POST',
+        headers: authHeaders(),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setScanToast(`✗ ${json.error ?? 'scan failed'}`);
+      } else {
+        const bull = Array.isArray(json.bullish) ? json.bullish.length : 0;
+        const bear = Array.isArray(json.bearish) ? json.bearish.length : 0;
+        setScanToast(`✓ ${bull} bullish · ${bear} bearish FVGs detected`);
+        setFvgScan({
+          bullish: json.bullish ?? [],
+          bearish: json.bearish ?? [],
+          scanned_at: json.scanned_at ?? '',
+        });
+      }
+    } catch {
+      setScanToast('✗ feed_unavailable');
+    } finally {
+      setScanning(false);
+      setTimeout(() => setScanToast(null), 4000);
+    }
+  }
 
   // Honor session-only staleness dismissal
   useEffect(() => {
@@ -570,6 +618,72 @@ export default function SettingsPage() {
           )}
         </div>
       )}
+
+      {/* ── FVG AUTO-SCAN ─────────────────────────────────────────── */}
+      <div style={card}>
+        <div style={{ ...sectionTitle, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span>FVG AUTO-SCAN</span>
+          <span style={{ ...mono, fontSize: 9, color: C.dim }}>
+            {fvgScan?.scanned_at ? `last scan ${fmtTime(fvgScan.scanned_at)}` : 'never scanned'}
+          </span>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14 }}>
+          <button
+            style={{ ...btn('primary'), opacity: scanning ? 0.6 : 1, cursor: scanning ? 'not-allowed' : 'pointer' }}
+            onClick={runAutoScan}
+            disabled={scanning}
+          >
+            {scanning ? 'SCANNING...' : 'SCAN NOW'}
+          </button>
+          {scanToast && (
+            <span style={{ ...mono, fontSize: 10, letterSpacing: '1px', color: scanToast.startsWith('✓') ? C.green : C.red }}>
+              {scanToast}
+            </span>
+          )}
+          <span style={{ ...mono, fontSize: 9, color: C.muted, marginLeft: 'auto' }}>
+            CL=F 4H · 60d window
+          </span>
+        </div>
+
+        {(!fvgScan || (fvgScan.bullish.length === 0 && fvgScan.bearish.length === 0)) ? (
+          <div style={{ ...mono, fontSize: 11, color: C.muted, padding: '12px 0', textAlign: 'center' }}>
+            NO FVG DATA — run scan to populate
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th style={th}>Type</th>
+                  <th style={th}>Top</th>
+                  <th style={th}>Bottom</th>
+                  <th style={th}>Mid</th>
+                  <th style={th}>Score</th>
+                  <th style={th}>Age</th>
+                  <th style={th}>Formed</th>
+                </tr>
+              </thead>
+              <tbody>
+                {([...fvgScan.bullish, ...fvgScan.bearish] as ScannedFVG[]).map((f, i) => {
+                  const c = f.type === 'BULLISH' ? C.green : C.red;
+                  return (
+                    <tr key={`${f.type}-${f.formed_at}-${i}`}>
+                      <td style={{ ...td, color: c, fontWeight: 700 }}>{f.type}</td>
+                      <td style={td}>{f.top.toFixed(2)}</td>
+                      <td style={td}>{f.bottom.toFixed(2)}</td>
+                      <td style={{ ...td, color: C.muted }}>{f.midpoint.toFixed(2)}</td>
+                      <td style={{ ...td, color: C.amber, fontWeight: 700 }}>{f.score.toFixed(1)}</td>
+                      <td style={{ ...td, color: C.muted }}>{f.age_bars} bars</td>
+                      <td style={{ ...td, color: C.muted }}>{fmtTime(f.formed_at)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       <div style={card}>
         <div style={sectionTitle}>UPDATE MARKET CONTEXT</div>
