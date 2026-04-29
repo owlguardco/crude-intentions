@@ -161,7 +161,10 @@ def build_entry(date_signal, date_close, direction, entry, sim, ema20, ema50, em
         "htf_structure_clear": fail_default,
     }
 
-    signal_iso = pd.Timestamp(date_signal).strftime("%Y-%m-%dT13:30:00.000Z")
+    # JournalWriteSchema is .strict() and has no `timestamp` field — that
+    # is assigned server-side by writeJournalEntry. We only stamp the
+    # historical date inside outcome.close_timestamp, which is what
+    # rolling_30 / calibration ordering actually reads.
     close_iso = pd.Timestamp(date_close).strftime("%Y-%m-%dT20:00:00.000Z")
 
     return {
@@ -203,7 +206,6 @@ def build_entry(date_signal, date_close, direction, entry, sim, ema20, ema50, em
         "tp2_price": sim["tp2_price"],
         "backtest_source": True,
         "supply_context": None,
-        "timestamp": signal_iso,
         "outcome": {
             "status": sim["status"],
             "result": sim["ticks_pnl"],
