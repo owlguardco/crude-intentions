@@ -784,7 +784,14 @@ function JournalView({
                   <td style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 12, color: "#e0e0e0", padding: "11px 12px 11px 0", borderBottom: "1px solid #2a2a2e20" }}>{d.stop_loss ? `$${d.stop_loss}` : (d.outcome?.status === 'OPEN' && d.stop_price ? `$${d.stop_price}` : "—")}</td>
                   <td style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 12, color: "#e0e0e0", padding: "11px 12px 11px 0", borderBottom: "1px solid #2a2a2e20" }}>{d.take_profit_1 ? `$${d.take_profit_1}` : (d.outcome?.status === 'OPEN' && d.tp1_price ? `$${d.tp1_price}` : "—")}</td>
                   <td style={{ padding: "11px 12px 11px 0", borderBottom: "1px solid #2a2a2e20" }}>
-                    <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: 1, color: d.source === "WEBHOOK" ? "#60a5fa" : "#555" }}>{d.source ?? "MANUAL"}</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                      <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: 1, color: d.source === "WEBHOOK" ? "#60a5fa" : "#555" }}>{d.source ?? "MANUAL"}</span>
+                      {d.historical && (
+                        <span title="Imported via guided wizard — excluded from calibration cohorts" style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "1px", padding: "2px 5px", borderRadius: 3, color: "#888", background: "#2a2a2e40", border: "1px solid #2a2a2e" }}>
+                          HIST
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td style={{ padding: "11px 12px 11px 0", borderBottom: "1px solid #2a2a2e20" }}>
                     <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, color: d.adversarial_verdict === "PASS" ? "#22c55e" : d.adversarial_verdict === "CONDITIONAL_PASS" ? "#d4a520" : d.adversarial_verdict === "SKIP" ? "#ef4444" : "#555" }}>
