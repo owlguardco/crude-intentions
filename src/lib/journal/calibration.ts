@@ -107,6 +107,7 @@ export interface CalibrationSnapshot {
   snapshot_at: string;
   totals: {
     trades_closed: number;
+    historical_closed: number;
     wins: number;
     losses: number;
     scratches: number;
@@ -308,6 +309,7 @@ export function recalculateCalibration(entries: CalibrationEntry[]): Calibration
     snapshot_at: new Date().toISOString(),
     totals: {
       trades_closed: closed.length,
+      historical_closed: closed.filter((e) => e.historical === true).length,
       wins: wins.length,
       losses: losses.length,
       scratches: scratches.length,

@@ -931,8 +931,50 @@ function CalibrationPanel({ snapshot, notes, loaded }: CalibrationPanelProps) {
   const r30 = snapshot.overall.rolling_30;
   const r30Display = r30.trades < 5 ? "—" : fmtPct(r30.win_rate);
 
+  const historicalClosed = snapshot.totals.historical_closed ?? 0;
+  const liveClosed = Math.max(0, snapshot.totals.trades_closed - historicalClosed);
+  const dataSourceBanner = (() => {
+    if (liveClosed >= 20) {
+      return {
+        kind: "LIVE" as const,
+        message: `✓ LIVE DATA — calibration based on ${liveClosed} live trades · ${historicalClosed} historical excluded from cohorts`,
+        bg: "#22c55e18",
+        border: "#22c55e40",
+        color: "#22c55e",
+      };
+    }
+    if (historicalClosed >= 20) {
+      return {
+        kind: "BASELINE" as const,
+        message: `⚡ BACKTEST BASELINE — ${historicalClosed} synthetic trades · ${liveClosed} live · calibration will switch to live data at 20 live trades`,
+        bg: "#d4a52018",
+        border: "#d4a52040",
+        color: "#d4a520",
+      };
+    }
+    return null;
+  })();
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {dataSourceBanner && (
+        <div
+          style={{
+            fontFamily: "JetBrains Mono, monospace",
+            fontSize: 10,
+            letterSpacing: "2px",
+            padding: "10px 16px",
+            borderRadius: 4,
+            marginBottom: 0,
+            background: dataSourceBanner.bg,
+            border: `1px solid ${dataSourceBanner.border}`,
+            color: dataSourceBanner.color,
+          }}
+        >
+          {dataSourceBanner.message}
+        </div>
+      )}
+
       {/* Summary cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
         {[
