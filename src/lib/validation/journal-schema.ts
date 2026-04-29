@@ -61,6 +61,12 @@ export const JournalWriteSchema = z.object({
     total_tfs: z.number(),
     dominant_trend: z.enum(['UP','DOWN','NEUTRAL']),
   }).optional(),
+  supply_context: z.object({
+    cushing_vs_4wk: z.enum(['BUILDING','DRAWING','FLAT']).nullable(),
+    eia_4wk_trend: z.enum(['BUILDS','DRAWS','MIXED']).nullable(),
+    rig_count_trend: z.enum(['RISING','FALLING','FLAT']).nullable(),
+    supply_bias: z.enum(['BEARISH','NEUTRAL','BULLISH']).nullable(),
+  }).nullable().optional(),
 }).strict();
 export type JournalWriteInput = z.input<typeof JournalWriteSchema>;
 export const OutcomeUpdateSchema = z.object({

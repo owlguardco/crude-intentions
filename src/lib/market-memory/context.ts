@@ -118,6 +118,22 @@ export interface MarketContext {
   recent_expectancy_r: number | null;
 
   context_age_warning: boolean;
+
+  // New in v1.2 — supply context derived from EIA
+  supply_context?: SupplyContext | null;
+}
+
+export type CushingTrend = 'BUILDING' | 'DRAWING' | 'FLAT';
+export type EiaWeeklyTrend = 'BUILDS' | 'DRAWS' | 'MIXED';
+export type RigCountTrend = 'RISING' | 'FALLING' | 'FLAT';
+export type SupplyBias = 'BEARISH' | 'NEUTRAL' | 'BULLISH';
+
+export interface SupplyContext {
+  cushing_vs_4wk: CushingTrend | null;
+  eia_4wk_trend: EiaWeeklyTrend | null;
+  rig_count_trend: RigCountTrend | null;
+  supply_bias: SupplyBias | null;
+  updated_at: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

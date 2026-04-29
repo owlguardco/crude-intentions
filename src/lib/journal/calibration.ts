@@ -15,6 +15,12 @@ export interface CalibrationEntry {
   contracts: number | null;
   timestamp: string;
   checklist?: Record<string, { result: 'PASS' | 'FAIL'; detail: string }>;
+  supply_context?: {
+    cushing_vs_4wk: 'BUILDING' | 'DRAWING' | 'FLAT' | null;
+    eia_4wk_trend: 'BUILDS' | 'DRAWS' | 'MIXED' | null;
+    rig_count_trend: 'RISING' | 'FALLING' | 'FLAT' | null;
+    supply_bias: 'BEARISH' | 'NEUTRAL' | 'BULLISH' | null;
+  } | null;
   outcome: {
     status: 'OPEN' | 'WIN' | 'LOSS' | 'SCRATCH' | 'BLOCKED' | 'EXPIRED';
     result: number | null;
@@ -87,6 +93,15 @@ interface SessionBucket {
   win_rate: number;
 }
 
+export type SupplyBiasKey = 'BEARISH' | 'NEUTRAL' | 'BULLISH';
+
+export interface SupplyBiasBucket {
+  trades: number;
+  wins: number;
+  win_rate: number;
+  wilson_ci: { low: number; high: number } | null;
+}
+
 export interface CalibrationSnapshot {
   snapshot_at: string;
   totals: {
@@ -104,6 +119,7 @@ export interface CalibrationSnapshot {
   by_session: Record<string, SessionBucket>;
   by_confidence: Record<string, ConfidenceBucket>;
   by_factor: Record<FactorKey, FactorBreakdown>;
+  by_supply_bias: Record<SupplyBiasKey, SupplyBiasBucket>;
   confidence_tiers_inverted: boolean;
   overall: OverallStats;
 }
@@ -229,6 +245,31 @@ export function recalculateCalibration(entries: CalibrationEntry[]): Calibration
     };
   }
 
+  // by_supply_bias — win rate split by supply_bias at entry time
+  const supplyKeys: SupplyBiasKey[] = ['BEARISH', 'NEUTRAL', 'BULLISH'];
+  const by_supply_bias = {} as Record<SupplyBiasKey, SupplyBiasBucket>;
+  for (const k of supplyKeys) {
+    by_supply_bias[k] = { trades: 0, wins: 0, win_rate: 0, wilson_ci: null };
+  }
+  for (const entry of closed) {
+    const bias = entry.supply_context?.supply_bias;
+    if (bias === 'BEARISH' || bias === 'NEUTRAL' || bias === 'BULLISH') {
+      const b = by_supply_bias[bias];
+      b.trades++;
+      if (entry.outcome.status === 'WIN') b.wins++;
+    }
+  }
+  for (const k of supplyKeys) {
+    const b = by_supply_bias[k];
+    if (b.trades < 5) {
+      b.win_rate = 0;
+      b.wilson_ci = null;
+    } else {
+      b.win_rate = b.wins / b.trades;
+      b.wilson_ci = wilsonCi(b.wins, b.trades);
+    }
+  }
+
   // confidence_tiers_inverted — HIGH win_rate < LOW win_rate
   const high = by_confidence['HIGH'];
   const low = by_confidence['LOW'];
@@ -274,6 +315,7 @@ export function recalculateCalibration(entries: CalibrationEntry[]): Calibration
     by_session,
     by_confidence,
     by_factor,
+    by_supply_bias,
     confidence_tiers_inverted,
     overall,
   };

@@ -1,6 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+
+interface SupplyContextValue {
+  cushing_vs_4wk: 'BUILDING' | 'DRAWING' | 'FLAT' | null;
+  eia_4wk_trend: 'BUILDS' | 'DRAWS' | 'MIXED' | null;
+  rig_count_trend: 'RISING' | 'FALLING' | 'FLAT' | null;
+  supply_bias: 'BEARISH' | 'NEUTRAL' | 'BULLISH' | null;
+}
 
 type MTFTimeframe = "1H" | "4H" | "D";
 type MTFTrend = "UP" | "DOWN" | "NEUTRAL";
@@ -130,6 +137,25 @@ export default function PreTradePage() {
   const [logging, setLogging] = useState(false);
   const [logged, setLogged] = useState(false);
   const [logToast, setLogToast] = useState<string | null>(null);
+  const [supplyContext, setSupplyContext] = useState<SupplyContextValue | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/supply-context", {
+          headers: { "x-api-key": process.env.NEXT_PUBLIC_INTERNAL_API_KEY ?? "" },
+        });
+        if (!res.ok) return;
+        const json = await res.json();
+        if (cancelled) return;
+        if (json.supply_context) setSupplyContext(json.supply_context as SupplyContextValue);
+      } catch {
+        // silent
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const [mtfOpen, setMtfOpen] = useState(false);
   const [mtfRows, setMtfRows] = useState<Record<MTFTimeframe, MTFRowState>>({
@@ -232,6 +258,7 @@ export default function PreTradePage() {
         stop_price: result.stop_price ?? null,
         tp1_price: result.tp1_price ?? null,
         tp2_price: result.tp2_price ?? null,
+        supply_context: supplyContext,
       };
 
       const res = await fetch("/api/journal", {
@@ -629,6 +656,33 @@ export default function PreTradePage() {
             </button>
           </div>
         )}
+
+        {/* SUPPLY CONTEXT card */}
+        <div style={{ marginTop: 18, paddingTop: 18, borderTop: "1px solid #2a2a2e" }}>
+          <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "3px", color: "#d4a520", marginBottom: 12 }}>
+            SUPPLY CONTEXT
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            {(() => {
+              const sc = supplyContext;
+              const biasColor = sc?.supply_bias === "BEARISH" ? "#ef4444"
+                : sc?.supply_bias === "BULLISH" ? "#22c55e"
+                : "#888";
+              const cells: Array<[string, string, string]> = [
+                ["CUSHING",     sc?.cushing_vs_4wk ?? "—",  "#e0e0e0"],
+                ["EIA 4WK",     sc?.eia_4wk_trend ?? "—",   "#e0e0e0"],
+                ["RIG COUNT",   sc?.rig_count_trend ?? "—", "#888"],
+                ["SUPPLY BIAS", sc?.supply_bias ?? "—",     biasColor],
+              ];
+              return cells.map(([label, value, color]) => (
+                <div key={label} style={{ background: "#111115", border: "1px solid #2a2a2e", borderRadius: 4, padding: "10px 12px" }}>
+                  <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 8, letterSpacing: "2px", color: "#666670", marginBottom: 4 }}>{label}</div>
+                  <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 12, fontWeight: 700, color }}>{value}</div>
+                </div>
+              ));
+            })()}
+          </div>
+        </div>
       </div>
 
       {logToast && (
