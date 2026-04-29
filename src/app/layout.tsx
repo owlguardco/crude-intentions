@@ -72,6 +72,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     error?: string;
   } | null>(null);
   const [geoExpanded, setGeoExpanded] = useState(false);
+  const [clPrice, setClPrice] = useState<number | null>(null);
+  const [ovxPrice, setOvxPrice] = useState<number | null>(null);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -92,6 +94,52 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       window.removeEventListener("storage", onChange);
       window.removeEventListener("alfred:status-changed", onChange);
     };
+  }, []);
+
+  // Live CL price — poll every 30s
+  useEffect(() => {
+    let cancelled = false;
+    const loadCl = async () => {
+      try {
+        const res = await fetch("/api/cl-price");
+        if (cancelled) return;
+        if (!res.ok) { setClPrice(null); return; }
+        const json = await res.json();
+        if (typeof json.price === "number" && Number.isFinite(json.price)) {
+          setClPrice(json.price);
+        } else {
+          setClPrice(null);
+        }
+      } catch {
+        if (!cancelled) setClPrice(null);
+      }
+    };
+    loadCl();
+    const t = setInterval(loadCl, 30_000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, []);
+
+  // Live OVX — poll every 5 minutes
+  useEffect(() => {
+    let cancelled = false;
+    const loadOvx = async () => {
+      try {
+        const res = await fetch("/api/ovx");
+        if (cancelled) return;
+        if (!res.ok) { setOvxPrice(null); return; }
+        const json = await res.json();
+        if (typeof json.price === "number" && Number.isFinite(json.price)) {
+          setOvxPrice(json.price);
+        } else {
+          setOvxPrice(null);
+        }
+      } catch {
+        if (!cancelled) setOvxPrice(null);
+      }
+    };
+    loadOvx();
+    const t = setInterval(loadOvx, 5 * 60_000);
+    return () => { cancelled = true; clearInterval(t); };
   }, []);
 
   // Geopolitical flag — Truth Social RSS poller (silent degradation)
@@ -248,8 +296,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             gap: 20,
             flexShrink: 0,
           }}>
-            <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 18, fontWeight: 700, color: "#e0e0e0" }}>78.42</span>
-            <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 13, color: "#22c55e" }}>+0.34%</span>
+            <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 18, fontWeight: 700, color: "#e0e0e0" }}>
+              {clPrice != null ? clPrice.toFixed(2) : "—"}
+            </span>
 
             <span style={{
               fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "2px",
@@ -262,7 +311,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "1px",
               padding: "3px 8px", borderRadius: 3,
               color: "#666670", background: "#66667018", border: "1px solid #66667040",
-            }}>OVX 28.4</span>
+            }}>OVX {ovxPrice != null ? ovxPrice.toFixed(1) : "—"}</span>
 
             {(() => {
               if (!geoFlag) {
