@@ -8,7 +8,9 @@
  *
  * Returns: { price, timestamp, currency, session_open } where session_open is
  *          the open of the earliest intraday candle whose NY-local date
- *          matches today, or null if no such candle exists.
+ *          matches the current CME CL session day. Session day rolls at
+ *          18:00 ET (Globex open), so on Sunday/weeknight evenings the
+ *          anchor advances to the next calendar day.
  */
 
 import { NextResponse } from 'next/server';
@@ -34,14 +36,30 @@ interface YahooChartResponse {
   };
 }
 
-function todayInNY(): string {
-  // YYYY-MM-DD in America/New_York. en-CA gives ISO-style ordering.
+// CME CL Globex session: opens 6:00 PM ET, closes 5:00 PM ET the next
+// calendar day. The session is named after the calendar day it closes on,
+// so:
+//   NY time before 18:00 → sessionDate = today's NY date
+//   NY time at/after 18:00 → sessionDate = tomorrow's NY date
+function sessionDateInNY(): string {
+  const now = new Date();
+  const nyHour = parseInt(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      hour: 'numeric',
+      hour12: false,
+    }).format(now),
+    10,
+  );
+  const target = Number.isFinite(nyHour) && nyHour >= 18
+    ? new Date(now.getTime() + 24 * 60 * 60 * 1000)
+    : now;
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/New_York',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  }).format(new Date());
+  }).format(target);
 }
 
 function dateInNY(unixSeconds: number): string {
@@ -57,11 +75,11 @@ function findSessionOpen(
   timestamps: number[],
   opens: Array<number | null>,
 ): number | null {
-  const today = todayInNY();
+  const sessionDate = sessionDateInNY();
   for (let i = 0; i < timestamps.length; i++) {
     const o = opens[i];
     if (typeof o !== 'number' || !Number.isFinite(o)) continue;
-    if (dateInNY(timestamps[i]) === today) return o;
+    if (dateInNY(timestamps[i]) === sessionDate) return o;
   }
   return null;
 }
