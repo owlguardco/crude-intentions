@@ -47,6 +47,39 @@ interface AnalysisResult {
 
 type EmaStackChoice = "BULLISH" | "BEARISH" | "MIXED";
 
+interface ComputedLevels {
+  stop_price: number | null;
+  tp1_price: number | null;
+  tp2_price: number | null;
+}
+
+function computeLevels(
+  direction: "LONG" | "SHORT" | "NO TRADE",
+  entry: number | null,
+  stop: number | null,
+): ComputedLevels {
+  if (entry == null || stop == null || direction === "NO TRADE") {
+    return { stop_price: null, tp1_price: null, tp2_price: null };
+  }
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  if (direction === "LONG") {
+    const risk = entry - stop;
+    if (risk <= 0) return { stop_price: null, tp1_price: null, tp2_price: null };
+    return {
+      stop_price: round2(stop),
+      tp1_price: round2(entry + 2 * risk),
+      tp2_price: round2(entry + 4 * risk),
+    };
+  }
+  const risk = stop - entry;
+  if (risk <= 0) return { stop_price: null, tp1_price: null, tp2_price: null };
+  return {
+    stop_price: round2(stop),
+    tp1_price: round2(entry - 2 * risk),
+    tp2_price: round2(entry - 4 * risk),
+  };
+}
+
 const SESSION_MAP: Record<string, string> = {
   "NY Open": "NY_OPEN",
   "NY Afternoon": "NY_AFTERNOON",
@@ -137,6 +170,7 @@ export default function PreTradePage() {
     dxy: "Declining", fvg: "Bullish",
     fvgTop: "", fvgBottom: "", fvgAge: "",
     session: "NY Open",
+    stopPrice: "",
     htf_ema_stack: "" as "" | EmaStackChoice,
     setup_ema_stack: "" as "" | EmaStackChoice,
   });
@@ -235,10 +269,17 @@ export default function PreTradePage() {
       const confidence_label = (result.confidence_label ?? "MEDIUM") as
         "CONVICTION" | "HIGH" | "MEDIUM" | "LOW";
       const entry_price = form.price ? parseFloat(form.price) : null;
+      const stopRaw = form.stopPrice ? parseFloat(form.stopPrice) : null;
+      const stopParsed = stopRaw != null && Number.isFinite(stopRaw) ? stopRaw : null;
+      const computed = computeLevels(result.decision, entry_price, stopParsed);
       const score = Math.max(0, Math.min(10, Math.round(result.score)));
       const reasoning = (result.reasoning ?? "").trim().length >= 10
         ? result.reasoning
         : "Logged from pre-trade analysis.";
+
+      const stop_price = computed.stop_price ?? result.stop_price ?? null;
+      const tp1_price  = computed.tp1_price  ?? result.tp1_price  ?? null;
+      const tp2_price  = computed.tp2_price  ?? result.tp2_price  ?? null;
 
       const payload = {
         rules_version: "1.8",
@@ -249,9 +290,9 @@ export default function PreTradePage() {
         grade,
         confidence_label,
         entry_price,
-        stop_loss: result.stop_price ?? null,
-        take_profit_1: result.tp1_price ?? null,
-        take_profit_2: result.tp2_price ?? null,
+        stop_loss: stop_price,
+        take_profit_1: tp1_price,
+        take_profit_2: tp2_price,
         contracts: null,
         risk_dollars: null,
         checklist: mapChecklistToJournal(result.checklist ?? []),
@@ -267,9 +308,9 @@ export default function PreTradePage() {
           ovx: parseFloat(form.ovx) || 0,
           dxy: form.dxy,
         },
-        stop_price: result.stop_price ?? null,
-        tp1_price: result.tp1_price ?? null,
-        tp2_price: result.tp2_price ?? null,
+        stop_price,
+        tp1_price,
+        tp2_price,
         supply_context: supplyContext,
       };
 
@@ -336,6 +377,18 @@ export default function PreTradePage() {
               <option>Declining</option>
               <option>Neutral</option>
             </select>
+          </div>
+
+          <div>
+            <label style={labelStyle}>STOP PRICE</label>
+            <input
+              style={inputStyle}
+              type="number"
+              step="0.01"
+              value={form.stopPrice}
+              onChange={(e) => set("stopPrice", e.target.value)}
+              placeholder="optional"
+            />
           </div>
         </div>
 
@@ -715,6 +768,42 @@ export default function PreTradePage() {
             <div style={{ padding: "8px 12px", background: "#111115", borderRadius: 4, fontFamily: "JetBrains Mono, monospace", fontSize: 9, color: "#444450", lineHeight: 1.6, marginBottom: 12 }}>
               {result.disclaimer}
             </div>
+
+            {/* Computed levels — shown when stop is provided and decision is directional */}
+            {(() => {
+              if (result.decision === "NO TRADE") return null;
+              const entry = form.price ? parseFloat(form.price) : null;
+              const stop = form.stopPrice ? parseFloat(form.stopPrice) : null;
+              const stopValid = stop != null && Number.isFinite(stop);
+              if (!stopValid) return null;
+              const lvl = computeLevels(result.decision, entry, stop);
+              if (lvl.tp1_price == null || lvl.tp2_price == null) {
+                return (
+                  <div style={{ marginBottom: 12, padding: "10px 12px", background: "#111115", border: "1px solid #ef444430", borderRadius: 4, fontFamily: "JetBrains Mono, monospace", fontSize: 10, color: "#ef4444", letterSpacing: "1px" }}>
+                    ⚠ STOP IS ON THE WRONG SIDE OF ENTRY — TP LEVELS UNAVAILABLE
+                  </div>
+                );
+              }
+              return (
+                <div style={{ marginBottom: 12, padding: 12, background: "#111115", border: "1px solid #2a2a2e", borderRadius: 4 }}>
+                  <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "2px", color: "#d4a520", marginBottom: 10 }}>
+                    COMPUTED LEVELS
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
+                    {[
+                      ["STOP", `$${lvl.stop_price?.toFixed(2)}`, "#ef4444"],
+                      ["TP1 (2R)", `$${lvl.tp1_price.toFixed(2)}`, "#22c55e"],
+                      ["TP2 (4R)", `$${lvl.tp2_price.toFixed(2)}`, "#22c55e"],
+                    ].map(([label, value, color]) => (
+                      <div key={label}>
+                        <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 8, letterSpacing: "2px", color: "#666670", marginBottom: 4 }}>{label}</div>
+                        <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 14, fontWeight: 700, color }}>{value}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
             <button
               onClick={logSetup}
