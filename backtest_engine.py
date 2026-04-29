@@ -12,12 +12,25 @@ All entries are stamped historical=True and backtest_source=True so the
 calibration engine excludes them from cohort breakdowns while still
 counting them toward totals.trades_closed.
 """
+import datetime
 import json
 import sys
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
 import yfinance as yf
+
+NY_TZ = ZoneInfo("America/New_York")
+UTC = datetime.timezone.utc
+
+
+def to_utc_iso(date_like, hour: int, minute: int) -> str:
+    """Return an ISO-8601 UTC string for the given NY-local date + clock time."""
+    d = pd.Timestamp(date_like).date()
+    dt_et = datetime.datetime(d.year, d.month, d.day, hour, minute, 0, tzinfo=NY_TZ)
+    dt_utc = dt_et.astimezone(UTC)
+    return dt_utc.strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
 OUTPUT_PATH = "backtest_output.json"
 MAX_TRADES = 200
@@ -161,11 +174,10 @@ def build_entry(date_signal, date_close, direction, entry, sim, ema20, ema50, em
         "htf_structure_clear": fail_default,
     }
 
-    # JournalWriteSchema is .strict() and has no `timestamp` field — that
-    # is assigned server-side by writeJournalEntry. We only stamp the
-    # historical date inside outcome.close_timestamp, which is what
-    # rolling_30 / calibration ordering actually reads.
-    close_iso = pd.Timestamp(date_close).strftime("%Y-%m-%dT20:00:00.000Z")
+    # 09:30 ET signal entry; close stamped at 16:00 ET on the close bar.
+    # Both converted to UTC per-date so EDT/EST transitions are honored.
+    signal_iso = to_utc_iso(date_signal, 9, 30)
+    close_iso = to_utc_iso(date_close, 16, 0)
 
     return {
         "rules_version": "1.8",
@@ -206,6 +218,7 @@ def build_entry(date_signal, date_close, direction, entry, sim, ema20, ema50, em
         "tp2_price": sim["tp2_price"],
         "backtest_source": True,
         "supply_context": None,
+        "timestamp": signal_iso,
         "outcome": {
             "status": sim["status"],
             "result": sim["ticks_pnl"],

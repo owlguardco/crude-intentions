@@ -68,6 +68,11 @@ export const JournalWriteSchema = z.object({
     rig_count_trend: z.enum(['RISING','FALLING','FLAT']).nullable(),
     supply_bias: z.enum(['BEARISH','NEUTRAL','BULLISH']).nullable(),
   }).nullable().optional(),
+  // Optional ISO 8601 datetime override. When omitted, writeJournalEntry
+  // stamps the entry with new Date().toISOString() at write time. Backtest
+  // and bulk-import callers pass the historical signal time so the journal
+  // table renders the correct date.
+  timestamp: z.string().datetime().optional(),
 }).strict();
 export type JournalWriteInput = z.input<typeof JournalWriteSchema>;
 export const OutcomeUpdateSchema = z.object({

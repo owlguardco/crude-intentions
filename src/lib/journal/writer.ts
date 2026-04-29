@@ -52,7 +52,9 @@ export interface WriteResult { success: boolean; id: string; integrity_hash: str
 export async function writeJournalEntry(input: JournalWriteInput): Promise<WriteResult> {
   const journal = await readJournal();
   const id = generateId(journal.decisions);
-  const timestamp = new Date().toISOString();
+  // Honor caller-supplied historical timestamp (e.g. backtest, bulk import).
+  // Falls back to wall-clock now when omitted (the common path).
+  const timestamp = input.timestamp ?? new Date().toISOString();
   const integrity_hash = computeIntegrityHash(id, timestamp, input.direction, input.score, input.entry_price);
   const entry: JournalEntry = { ...input, id, timestamp, integrity_hash, outcome: { status: input.direction==='NO TRADE'?'BLOCKED':'OPEN', result:null, result_dollars:null, result_r:null, close_timestamp:null, close_price:null, post_mortem:null, post_mortem_timestamp:null } };
   const updated = [...journal.decisions, entry];
