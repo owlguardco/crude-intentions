@@ -160,6 +160,7 @@ export default function JournalPage() {
           rsi: 50, ovx: 30, dxy: "neutral",
         },
         paper_trading: false,
+        historical: true,
         alfred_fallback: false,
         postmortem: null,
         backtest_source: false,

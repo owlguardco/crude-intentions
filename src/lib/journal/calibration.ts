@@ -14,6 +14,7 @@ export interface CalibrationEntry {
   stop_loss: number | null;
   contracts: number | null;
   timestamp: string;
+  historical?: boolean;
   checklist?: Record<string, { result: 'PASS' | 'FAIL'; detail: string }>;
   supply_context?: {
     cushing_vs_4wk: 'BUILDING' | 'DRAWING' | 'FLAT' | null;
@@ -165,11 +166,16 @@ export function recalculateCalibration(entries: CalibrationEntry[]): Calibration
   const total_loss_r = losses.reduce((s, e) => s + Math.abs(getR(e)), 0);
   const profit_factor = total_loss_r > 0 ? total_win_r / total_loss_r : 0;
 
+  // Cohort breakdowns exclude historical (guided-import) entries so the
+  // grade/session/factor stats reflect ALFRED-scored trades only. Historical
+  // entries still contribute to totals and overall win rate above.
+  const cohortClosed = closed.filter((e) => e.historical !== true);
+
   const by_grade: Record<string, GradeBucket> = {};
   const by_session: Record<string, SessionBucket> = {};
   const by_confidence: Record<string, ConfidenceBucket> = {};
 
-  for (const entry of closed) {
+  for (const entry of cohortClosed) {
     const g = entry.grade ?? 'F';
     if (!by_grade[g]) by_grade[g] = { trades: 0, wins: 0, win_rate: 0, avg_r: 0 };
     const prevT = by_grade[g].trades;
@@ -182,7 +188,7 @@ export function recalculateCalibration(entries: CalibrationEntry[]): Calibration
       by_grade[g].trades > 0 ? by_grade[g].wins / by_grade[g].trades : 0;
   }
 
-  for (const entry of closed) {
+  for (const entry of cohortClosed) {
     const s = entry.session ?? 'UNKNOWN';
     if (!by_session[s]) by_session[s] = { trades: 0, wins: 0, win_rate: 0 };
     by_session[s].trades++;
@@ -193,7 +199,7 @@ export function recalculateCalibration(entries: CalibrationEntry[]): Calibration
       by_session[s].trades > 0 ? by_session[s].wins / by_session[s].trades : 0;
   }
 
-  for (const entry of closed) {
+  for (const entry of cohortClosed) {
     const c = entry.confidence_label ?? 'LOW';
     if (!by_confidence[c])
       by_confidence[c] = {
@@ -222,7 +228,7 @@ export function recalculateCalibration(entries: CalibrationEntry[]): Calibration
       passW = 0,
       failT = 0,
       failW = 0;
-    for (const entry of closed) {
+    for (const entry of cohortClosed) {
       const item = entry.checklist?.[key];
       const passed = item?.result === 'PASS';
       const isWin = entry.outcome.status === 'WIN';
@@ -251,7 +257,7 @@ export function recalculateCalibration(entries: CalibrationEntry[]): Calibration
   for (const k of supplyKeys) {
     by_supply_bias[k] = { trades: 0, wins: 0, win_rate: 0, wilson_ci: null };
   }
-  for (const entry of closed) {
+  for (const entry of cohortClosed) {
     const bias = entry.supply_context?.supply_bias;
     if (bias === 'BEARISH' || bias === 'NEUTRAL' || bias === 'BULLISH') {
       const b = by_supply_bias[bias];

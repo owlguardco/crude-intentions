@@ -48,6 +48,7 @@ export const JournalWriteSchema = z.object({
   adversarial_notes: z.string().max(1000).optional(),
   outcome: OutcomeSchema.optional(),
   paper_trading: z.boolean().default(true),
+  historical: z.boolean().default(false),
   alfred_fallback: z.boolean().default(false),
   postmortem: z.string().nullable().default(null),
   stop_price: z.number().finite().min(10).max(500).nullable().optional(),
