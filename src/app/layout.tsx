@@ -96,22 +96,20 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     };
   }, []);
 
-  // Live CL price — poll every 30s
+  // Live CL price — poll every 30s. Failure branches are no-ops so the last
+  // good value persists through transient fetch errors.
   useEffect(() => {
     let cancelled = false;
     const loadCl = async () => {
       try {
         const res = await fetch("/api/cl-price");
-        if (cancelled) return;
-        if (!res.ok) { setClPrice(null); return; }
+        if (cancelled || !res.ok) return;
         const json = await res.json();
         if (typeof json.price === "number" && Number.isFinite(json.price)) {
           setClPrice(json.price);
-        } else {
-          setClPrice(null);
         }
       } catch {
-        if (!cancelled) setClPrice(null);
+        // hold last good value
       }
     };
     loadCl();
@@ -119,22 +117,19 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     return () => { cancelled = true; clearInterval(t); };
   }, []);
 
-  // Live OVX — poll every 5 minutes
+  // Live OVX — poll every 5 minutes. Same hold-last-good behavior on failure.
   useEffect(() => {
     let cancelled = false;
     const loadOvx = async () => {
       try {
         const res = await fetch("/api/ovx");
-        if (cancelled) return;
-        if (!res.ok) { setOvxPrice(null); return; }
+        if (cancelled || !res.ok) return;
         const json = await res.json();
         if (typeof json.price === "number" && Number.isFinite(json.price)) {
           setOvxPrice(json.price);
-        } else {
-          setOvxPrice(null);
         }
       } catch {
-        if (!cancelled) setOvxPrice(null);
+        // hold last good value
       }
     };
     loadOvx();
