@@ -4,6 +4,7 @@ import Link from "next/link";
 import logData from "@/data/safety_check_log.json";
 import weeklyBias from "@/data/weekly_bias.json";
 import MarketMemoryWidget from "@/components/MarketMemoryWidget";
+import StreetPulseWidget from "@/components/StreetPulseWidget";
 
 const CHECKLIST_ITEMS = [
   "EMA Stack Aligned",
@@ -136,6 +137,9 @@ export default function DashboardPage() {
           </table>
         </div>
       </div>
+
+      {/* Street Pulse — sentiment readout below the market-memory row */}
+      <StreetPulseWidget />
 
       {/* Full evaluations table */}
       <div style={{ background: "#1a1a1e", border: "1px solid #2a2a2e", borderRadius: 6, padding: 20 }}>
