@@ -261,12 +261,15 @@ export default function PositionPage() {
     if (id) {
       const res = await fetch(`/api/journal/${id}/outcome`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": process.env.NEXT_PUBLIC_INTERNAL_API_KEY ?? "",
+        },
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        throw new Error(j.error ?? "Journal outcome update failed");
+        const j = await res.json().catch(() => ({} as { error?: string }));
+        throw new Error(j?.error ?? `Journal outcome update failed (HTTP ${res.status})`);
       }
     }
     const del = await fetch("/api/position", {

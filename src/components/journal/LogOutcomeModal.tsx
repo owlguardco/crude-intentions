@@ -100,8 +100,11 @@ export default function LogOutcomeModal({ trade, onClose, onSave }: Props) {
         close_price: closePrice,
         run_postmortem: runPostmortem,
       });
-    } catch {
-      setSaveError("Save failed. Try again.");
+    } catch (err) {
+      const msg = err instanceof Error && err.message
+        ? err.message
+        : "Save failed. Try again.";
+      setSaveError(msg);
       setSaving(false);
     }
   }
