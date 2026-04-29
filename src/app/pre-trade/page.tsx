@@ -19,6 +19,7 @@ interface AnalysisResult {
   score: number;
   grade: string;
   decision: "LONG" | "SHORT" | "NO TRADE";
+  confidence_label?: "CONVICTION" | "HIGH" | "MEDIUM" | "LOW";
   checklist: Array<{ label: string; result: "PASS" | "FAIL"; detail: string }>;
   blocked_reasons: string[];
   wait_for: string | null;
@@ -26,6 +27,38 @@ interface AnalysisResult {
   disclaimer: string;
   fallback?: boolean;
   mtf_consensus?: MTFConsensusOut;
+  predicted_accuracy?: unknown;
+  stop_price?: number | null;
+  tp1_price?: number | null;
+  tp2_price?: number | null;
+}
+
+const SESSION_MAP: Record<string, string> = {
+  "NY Open": "NY_OPEN",
+  "NY Afternoon": "NY_AFTERNOON",
+  "London": "LONDON",
+  "Overlap": "OVERLAP",
+  "Asia": "ASIA",
+  "Off-hours": "OFF_HOURS",
+};
+
+function mapChecklistToJournal(
+  cl: Array<{ label: string; result: "PASS" | "FAIL"; detail: string }>,
+) {
+  const get = (label: string) =>
+    cl.find((c) => c.label === label) ?? { result: "FAIL" as const, detail: "Not evaluated" };
+  return {
+    ema_stack_aligned:   { result: get("EMA Stack Aligned").result,   detail: get("EMA Stack Aligned").detail   },
+    daily_confirms:      { result: get("Daily Confirms").result,      detail: get("Daily Confirms").detail      },
+    rsi_reset_zone:      { result: get("RSI Reset Zone").result,      detail: get("RSI Reset Zone").detail      },
+    macd_confirming:     { result: get("MACD Confirming").result,     detail: get("MACD Confirming").detail     },
+    price_at_key_level:  { result: get("Price at Key Level").result,  detail: get("Price at Key Level").detail  },
+    rr_valid:            { result: get("R/R Valid").result,           detail: get("R/R Valid").detail           },
+    session_timing:      { result: get("Session Timing").result,      detail: get("Session Timing").detail      },
+    eia_window_clear:    { result: get("EIA Window Clear").result,    detail: get("EIA Window Clear").detail    },
+    vwap_aligned:        { result: get("VWAP Aligned").result,        detail: get("VWAP Aligned").detail        },
+    htf_structure_clear: { result: get("HTF Structure Clear").result, detail: get("HTF Structure Clear").detail },
+  };
 }
 
 interface MTFRowState {
@@ -94,6 +127,9 @@ export default function PreTradePage() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [logging, setLogging] = useState(false);
+  const [logged, setLogged] = useState(false);
+  const [logToast, setLogToast] = useState<string | null>(null);
 
   const [mtfOpen, setMtfOpen] = useState(false);
   const [mtfRows, setMtfRows] = useState<Record<MTFTimeframe, MTFRowState>>({
@@ -132,6 +168,7 @@ export default function PreTradePage() {
     setLoading(true);
     setError(null);
     setResult(null);
+    setLogged(false);
     try {
       const mtf_signals = buildMtfSignals();
       const body = mtf_signals ? { ...form, mtf_signals } : { ...form };
@@ -150,7 +187,79 @@ export default function PreTradePage() {
     setLoading(false);
   }
 
+  async function logSetup() {
+    if (!result || logging || logged) return;
+    if (result.decision === "NO TRADE") return;
+    setLogging(true);
+    try {
+      const session = SESSION_MAP[form.session] ?? "NY_OPEN";
+      const grade = result.grade as "A+" | "A" | "B+" | "B" | "F";
+      const confidence_label = (result.confidence_label ?? "MEDIUM") as
+        "CONVICTION" | "HIGH" | "MEDIUM" | "LOW";
+      const entry_price = form.price ? parseFloat(form.price) : null;
+      const score = Math.max(0, Math.min(10, Math.round(result.score)));
+      const reasoning = (result.reasoning ?? "").trim().length >= 10
+        ? result.reasoning
+        : "Logged from pre-trade analysis.";
+
+      const payload = {
+        rules_version: "1.8",
+        session,
+        direction: result.decision,
+        source: "MANUAL" as const,
+        score,
+        grade,
+        confidence_label,
+        entry_price,
+        stop_loss: result.stop_price ?? null,
+        take_profit_1: result.tp1_price ?? null,
+        take_profit_2: result.tp2_price ?? null,
+        contracts: null,
+        risk_dollars: null,
+        checklist: mapChecklistToJournal(result.checklist ?? []),
+        blocked_reasons: result.blocked_reasons ?? [],
+        wait_for: result.wait_for ?? null,
+        reasoning,
+        market_context_snapshot: {
+          price: parseFloat(form.price) || 0,
+          ema20: parseFloat(form.ema20) || 0,
+          ema50: parseFloat(form.ema50) || 0,
+          ema200: parseFloat(form.ema200) || 0,
+          rsi: parseFloat(form.rsi) || 0,
+          ovx: parseFloat(form.ovx) || 0,
+          dxy: form.dxy,
+        },
+        stop_price: result.stop_price ?? null,
+        tp1_price: result.tp1_price ?? null,
+        tp2_price: result.tp2_price ?? null,
+      };
+
+      const res = await fetch("/api/journal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        const detail = data?.details?.fieldErrors
+          ? Object.keys(data.details.fieldErrors).join(", ")
+          : data?.error ?? "Log failed";
+        setLogToast(`✗ ${detail}`);
+      } else {
+        setLogged(true);
+        setLogToast(`✓ Logged ${data.id ?? "entry"}`);
+      }
+    } catch (e: any) {
+      setLogToast(`✗ ${e?.message ?? "Network error"}`);
+    } finally {
+      setLogging(false);
+      setTimeout(() => setLogToast(null), 4000);
+    }
+  }
+
   const decisionColor = result?.decision === "LONG" ? "#22c55e" : result?.decision === "SHORT" ? "#ef4444" : "#d4a520";
+  const logDisabled =
+    !result || logging || logged || result.decision === "NO TRADE";
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
@@ -493,16 +602,40 @@ export default function PreTradePage() {
               {result.disclaimer}
             </div>
 
-            <button style={{
-              padding: "9px 18px", background: "transparent",
-              border: "1px solid #2a2a2e", borderRadius: 4, cursor: "pointer",
-              fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "2px", color: "#666670",
-            }}>
-              LOG THIS SETUP
+            <button
+              onClick={logSetup}
+              disabled={logDisabled}
+              title={
+                result.decision === "NO TRADE"
+                  ? "Cannot log a NO TRADE setup"
+                  : logged
+                  ? "Already logged"
+                  : "Write this setup to the journal"
+              }
+              style={{
+                padding: "9px 18px",
+                background: logged ? "#22c55e18" : "transparent",
+                border: `1px solid ${logDisabled ? "#2a2a2e" : logged ? "#22c55e" : "#d4a520"}`,
+                borderRadius: 4,
+                cursor: logDisabled ? "not-allowed" : "pointer",
+                fontFamily: "JetBrains Mono, monospace",
+                fontSize: 10,
+                letterSpacing: "2px",
+                color: logDisabled ? "#444450" : logged ? "#22c55e" : "#d4a520",
+                opacity: logging ? 0.6 : 1,
+              }}
+            >
+              {logging ? "LOGGING..." : logged ? "✓ LOGGED" : "LOG THIS SETUP"}
             </button>
           </div>
         )}
       </div>
+
+      {logToast && (
+        <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 1000, padding: "10px 16px", background: "#1a1a1e", border: `1px solid ${logToast.startsWith("✓") ? "#22c55e" : "#ef4444"}`, borderRadius: 4, fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: "#e0e0e0", letterSpacing: "1px", boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
+          {logToast}
+        </div>
+      )}
     </div>
   );
 }
