@@ -37,6 +37,8 @@ const OpenSchema = z.object({
   contracts: z.number().int().min(1).max(10),
   stop_loss: z.number().finite().min(10).max(500).nullable().optional(),
   target: z.number().finite().min(10).max(500).nullable().optional(),
+  tp1_price: z.number().finite().min(10).max(500).nullable().optional(),
+  signal_id: z.string().min(1).max(64).nullable().optional(),
   session: z.string(),
   alfred_score: z.number().nullable().optional(),
   alfred_confidence: z.string().nullable().optional(),
@@ -46,6 +48,8 @@ const OpenSchema = z.object({
 const PatchSchema = z.object({
   stop_loss: z.number().finite().min(10).max(500).nullable().optional(),
   target: z.number().finite().min(10).max(500).nullable().optional(),
+  tp1_price: z.number().finite().min(10).max(500).nullable().optional(),
+  signal_id: z.string().min(1).max(64).nullable().optional(),
   notes: z.string().nullable().optional(),
 }).strict();
 
@@ -88,6 +92,8 @@ export async function POST(req: NextRequest) {
     contracts: parsed.data.contracts,
     stop_loss: parsed.data.stop_loss ?? null,
     target: parsed.data.target ?? null,
+    tp1_price: parsed.data.tp1_price ?? null,
+    signal_id: parsed.data.signal_id ?? null,
     session: parsed.data.session,
     alfred_score: parsed.data.alfred_score ?? null,
     alfred_confidence: parsed.data.alfred_confidence ?? null,

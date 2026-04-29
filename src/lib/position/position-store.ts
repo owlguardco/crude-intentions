@@ -11,6 +11,8 @@ export interface VirtualPosition {
   contracts: number;
   stop_loss: number | null;
   target: number | null;
+  tp1_price: number | null;
+  signal_id: string | null;
   opened_at: string;
   session: string;
   alfred_score: number | null;
@@ -43,7 +45,7 @@ export async function closePosition(): Promise<void> {
 }
 
 export async function updatePosition(
-  patch: Partial<Pick<VirtualPosition, 'stop_loss' | 'target' | 'notes'>>
+  patch: Partial<Pick<VirtualPosition, 'stop_loss' | 'target' | 'tp1_price' | 'signal_id' | 'notes'>>
 ): Promise<VirtualPosition | null> {
   const current = await getPosition();
   if (!current) return null;
