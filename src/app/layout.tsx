@@ -64,6 +64,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const [alfredStatus, setAlfredStatus] = useState<AlfredStatus>("UP");
   const [session, setSession] = useState(getSession());
   const [eia, setEia] = useState(getEIA());
+  const [geoFlag, setGeoFlag] = useState<{
+    flagged: boolean;
+    matched_at: string | null;
+    post_title: string | null;
+    post_url: string | null;
+    error?: string;
+  } | null>(null);
+  const [geoExpanded, setGeoExpanded] = useState(false);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -84,6 +92,31 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       window.removeEventListener("storage", onChange);
       window.removeEventListener("alfred:status-changed", onChange);
     };
+  }, []);
+
+  // Geopolitical flag — Truth Social RSS poller (silent degradation)
+  useEffect(() => {
+    let cancelled = false;
+    const loadGeo = async () => {
+      try {
+        const res = await fetch("/api/geo-flag");
+        if (cancelled) return;
+        if (!res.ok) return;
+        const json = await res.json();
+        setGeoFlag({
+          flagged: !!json.flagged,
+          matched_at: json.matched_at ?? null,
+          post_title: json.post_title ?? null,
+          post_url: json.post_url ?? null,
+          error: json.error,
+        });
+      } catch {
+        // silent — leave previous state
+      }
+    };
+    loadGeo();
+    const t = setInterval(loadGeo, 120_000);
+    return () => { cancelled = true; clearInterval(t); };
   }, []);
 
   // ALFRED status overrides API health for the dot:
@@ -231,6 +264,56 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               color: "#666670", background: "#66667018", border: "1px solid #66667040",
             }}>OVX 28.4</span>
 
+            {(() => {
+              if (!geoFlag) {
+                return (
+                  <span style={{
+                    fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "2px",
+                    padding: "3px 8px", borderRadius: 3,
+                    color: "#444450", background: "transparent", border: "1px solid #2a2a2e",
+                  }}>GEO · —</span>
+                );
+              }
+              if (geoFlag.error === "feed_unavailable") {
+                return (
+                  <span style={{
+                    fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "2px",
+                    padding: "3px 8px", borderRadius: 3,
+                    color: "#444450", background: "transparent", border: "1px solid #2a2a2e",
+                  }}>GEO · —</span>
+                );
+              }
+              if (geoFlag.flagged && geoFlag.matched_at) {
+                const mins = Math.max(0, Math.floor((Date.now() - new Date(geoFlag.matched_at).getTime()) / 60000));
+                if (mins > 30) {
+                  return (
+                    <span style={{
+                      fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "2px",
+                      padding: "3px 8px", borderRadius: 3,
+                      color: "#666670", background: "#66667018", border: "1px solid #66667040",
+                    }}>GEOPOLITICAL · CLEAR</span>
+                  );
+                }
+                return (
+                  <span
+                    onClick={() => setGeoExpanded((v) => !v)}
+                    style={{
+                      fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "2px",
+                      padding: "3px 8px", borderRadius: 3, cursor: "pointer",
+                      color: "#d4a520", background: "#d4a52018", border: "1px solid #d4a52040",
+                    }}
+                  >⚡ TRUTH · {mins} MIN AGO</span>
+                );
+              }
+              return (
+                <span style={{
+                  fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "2px",
+                  padding: "3px 8px", borderRadius: 3,
+                  color: "#666670", background: "#66667018", border: "1px solid #66667040",
+                }}>GEOPOLITICAL · CLEAR</span>
+              );
+            })()}
+
             <span style={{
               fontFamily: "JetBrains Mono, monospace", fontSize: 11, marginLeft: "auto",
               color: eia.isActive ? "#ef4444" : "#666670",
@@ -238,6 +321,42 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               EIA: {eia.isActive ? "⚠ ACTIVE" : `${eia.hours}h ${eia.mins}m`}
             </span>
           </div>
+
+          {/* Geopolitical flag inline expansion */}
+          {geoExpanded && geoFlag?.flagged && geoFlag.post_title && (
+            <div style={{
+              background: "rgba(212,165,32,0.08)",
+              borderBottom: "1px solid rgba(212,165,32,0.30)",
+              padding: "10px 24px", flexShrink: 0,
+              fontFamily: "JetBrains Mono, monospace", fontSize: 11,
+              color: "#e0e0e0", letterSpacing: "1px",
+              display: "flex", alignItems: "center", gap: 12,
+            }}>
+              <span style={{ color: "#d4a520", fontSize: 10, letterSpacing: "2px" }}>⚡ TRUTH POST</span>
+              <span style={{ flex: 1, color: "#888", fontSize: 11, letterSpacing: 0 }}>
+                {geoFlag.post_title}
+              </span>
+              {geoFlag.post_url && (
+                <a
+                  href={geoFlag.post_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    color: "#d4a520", fontSize: 9, letterSpacing: "2px",
+                    textDecoration: "none", padding: "3px 8px",
+                    border: "1px solid #d4a52040", borderRadius: 3,
+                  }}
+                >OPEN ↗</a>
+              )}
+              <button
+                onClick={() => setGeoExpanded(false)}
+                style={{
+                  background: "transparent", border: "none", cursor: "pointer",
+                  color: "#666670", fontSize: 14, lineHeight: 1, padding: "0 4px",
+                }}
+              >×</button>
+            </div>
+          )}
 
           {/* ALFRED Fallback Banner — visible app-wide while in fallback or recovery */}
           {(alfredStatus === "FALLBACK" || alfredStatus === "DOWN") && (
