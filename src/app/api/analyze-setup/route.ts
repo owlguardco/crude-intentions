@@ -14,6 +14,7 @@ import {
   type CalibrationEntry,
 } from '@/lib/journal/calibration';
 import { computeMTFConsensus } from '@/lib/alfred/mtf-consensus';
+import { computeEntryAlignment } from '@/lib/mtf/consensus';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -44,6 +45,8 @@ const SetupInputSchema = z.object({
     above_vwap: z.boolean().nullable(),
     trend: z.enum(['UP', 'DOWN', 'NEUTRAL']),
   })).min(1).max(3).optional(),
+  htf_ema_stack:   z.enum(['BULLISH', 'BEARISH', 'MIXED']).optional(),
+  setup_ema_stack: z.enum(['BULLISH', 'BEARISH', 'MIXED']).optional(),
 }).strict();
 
 // ─── ALFRED v1.8 System Prompt ────────────────────────────────────────────────
@@ -213,17 +216,36 @@ Score this setup. Return JSON only.`;
         console.warn('[ANALYZE-SETUP] Calibration read skipped:', calibErr);
       }
 
+      const entry_alignment =
+        d.htf_ema_stack && d.setup_ema_stack
+          ? computeEntryAlignment({
+              htf_ema_stack: d.htf_ema_stack,
+              setup_ema_stack: d.setup_ema_stack,
+              trigger_direction: result.decision as 'LONG' | 'SHORT' | 'NO TRADE',
+            })
+          : undefined;
+
       return NextResponse.json({
         ...result,
         predicted_accuracy,
         ...(mtf_consensus ? { mtf_consensus } : {}),
+        ...(entry_alignment ? { entry_alignment } : {}),
       });
     } catch (alfredErr) {
       console.error('[ALFRED FALLBACK] Anthropic unreachable, using fallback scorer:', alfredErr);
       const fallbackResult = runFallbackScorer(fallbackInput);
+      const entry_alignment =
+        d.htf_ema_stack && d.setup_ema_stack
+          ? computeEntryAlignment({
+              htf_ema_stack: d.htf_ema_stack,
+              setup_ema_stack: d.setup_ema_stack,
+              trigger_direction: fallbackResult.decision as 'LONG' | 'SHORT' | 'NO TRADE',
+            })
+          : undefined;
       return NextResponse.json({
         ...fallbackResult,
         ...(mtf_consensus ? { mtf_consensus } : {}),
+        ...(entry_alignment ? { entry_alignment } : {}),
       });
     }
 

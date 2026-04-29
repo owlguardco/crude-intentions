@@ -9,6 +9,7 @@ import {
 import { AdversarialScanSchema } from '@/lib/validation/journal-schema';
 import { kv } from '@/lib/kv';
 import { readContext, buildMarketMemoryPromptSection } from '@/lib/market-memory/context';
+import { computeEntryAlignment, type EmaStack } from '@/lib/mtf/consensus';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY;
@@ -40,6 +41,8 @@ interface WebhookSignal {
   session: 'NY_OPEN' | 'NY_AFTERNOON' | 'LONDON' | 'OVERLAP' | 'ASIA' | 'OFF_HOURS';
   weekly_bias?: string; htf_resistance?: number; htf_support?: number; eia_active: boolean;
   stop_loss?: number;
+  htf_ema_stack?: EmaStack;
+  setup_ema_stack?: EmaStack;
 }
 
 function computeTradeLevels(direction: 'LONG' | 'SHORT' | 'NO TRADE', entry: number | null, stop: number | null | undefined) {
@@ -198,9 +201,18 @@ export async function POST(req: NextRequest) {
       alfred_fallback: isFallback,
     });
     console.log(`[JOURNAL] Wrote: ${journalWrite.id}`);
+    const entry_alignment =
+      signal.htf_ema_stack && signal.setup_ema_stack
+        ? computeEntryAlignment({
+            htf_ema_stack: signal.htf_ema_stack,
+            setup_ema_stack: signal.setup_ema_stack,
+            trigger_direction: alfred.decision,
+          })
+        : undefined;
     return NextResponse.json({
       received_at: receivedAt, signal, alfred, adversarial,
       journal: { id: journalWrite.id, integrity_hash: journalWrite.integrity_hash, auto_logged: true },
+      ...(entry_alignment ? { entry_alignment } : {}),
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
