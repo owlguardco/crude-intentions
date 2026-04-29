@@ -67,14 +67,131 @@ export default function JournalPage() {
 
   // Import modal state
   const [importOpen, setImportOpen] = useState(false);
+  const [importTab, setImportTab] = useState<"RAW" | "GUIDED">("GUIDED");
   const [importRaw, setImportRaw] = useState("");
   const [importValidated, setImportValidated] = useState<{ ok: boolean; count: number; message: string } | null>(null);
   const [importing, setImporting] = useState(false);
   const [importToast, setImportToast] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
 
+  type GuidedResult = "WIN" | "LOSS" | "SCRATCH";
+  interface GuidedRow {
+    date: string;
+    direction: "LONG" | "SHORT";
+    entry: string;
+    stop: string;
+    result: GuidedResult;
+    result_r: string;
+  }
+  const blankGuidedRow = (): GuidedRow => ({
+    date: new Date().toISOString().slice(0, 10),
+    direction: "LONG",
+    entry: "",
+    stop: "",
+    result: "WIN",
+    result_r: "",
+  });
+  const [guidedRows, setGuidedRows] = useState<GuidedRow[]>([blankGuidedRow()]);
+  const MAX_GUIDED_ROWS = 20;
+
+  function setGuidedField<K extends keyof GuidedRow>(idx: number, key: K, val: GuidedRow[K]) {
+    setGuidedRows((rows) => rows.map((r, i) => (i === idx ? { ...r, [key]: val } : r)));
+    setImportValidated(null);
+    setImportError(null);
+  }
+
+  function isRowComplete(r: GuidedRow): boolean {
+    const e = parseFloat(r.entry);
+    const s = parseFloat(r.stop);
+    if (!Number.isFinite(e) || !Number.isFinite(s)) return false;
+    if (e <= 0 || s <= 0) return false;
+    if (!r.date) return false;
+    if (r.direction === "LONG" && s >= e) return false;
+    if (r.direction === "SHORT" && s <= e) return false;
+    return true;
+  }
+
+  function buildGuidedTrades(): unknown[] {
+    const placeholderChecklist = (() => {
+      const keys = [
+        "ema_stack_aligned", "daily_confirms", "rsi_reset_zone", "macd_confirming",
+        "price_at_key_level", "rr_valid", "session_timing", "eia_window_clear",
+        "vwap_aligned", "htf_structure_clear",
+      ] as const;
+      const out: Record<string, { result: "FAIL"; detail: string }> = {};
+      for (const k of keys) out[k] = { result: "FAIL", detail: "Imported via guided wizard - not evaluated" };
+      return out;
+    })();
+
+    return guidedRows.filter(isRowComplete).map((r) => {
+      const entry = parseFloat(r.entry);
+      const stop = parseFloat(r.stop);
+      const isLong = r.direction === "LONG";
+      const riskTicks = Math.abs((entry - stop) / 0.01);
+      const userR = parseFloat(r.result_r);
+      const r_value = Number.isFinite(userR)
+        ? userR
+        : r.result === "WIN" ? 1
+        : r.result === "LOSS" ? -1
+        : 0;
+      const ticks = r.result === "SCRATCH" ? 0 : Math.round(r_value * riskTicks * 10) / 10;
+      const closePrice = isLong ? entry + ticks / 100 : entry - ticks / 100;
+      const timestamp = new Date(`${r.date}T14:30:00.000Z`).toISOString();
+
+      return {
+        rules_version: "1.8",
+        session: "NY_OPEN",
+        direction: r.direction,
+        score: 5,
+        grade: "B",
+        confidence_label: "MEDIUM",
+        entry_price: entry,
+        stop_loss: stop,
+        take_profit_1: null,
+        take_profit_2: null,
+        contracts: 1,
+        risk_dollars: null,
+        checklist: placeholderChecklist,
+        blocked_reasons: [],
+        wait_for: null,
+        reasoning: "Imported via guided wizard - historical trade backfill.",
+        market_context_snapshot: {
+          price: entry, ema20: entry, ema50: entry, ema200: entry,
+          rsi: 50, ovx: 30, dxy: "neutral",
+        },
+        paper_trading: false,
+        alfred_fallback: false,
+        postmortem: null,
+        backtest_source: false,
+        timestamp,
+        outcome: {
+          status: r.result,
+          result: ticks,
+          close_price: Math.round(closePrice * 100) / 100,
+          close_timestamp: timestamp,
+        },
+      };
+    });
+  }
+
   function validateImport() {
     setImportError(null);
+    if (importTab === "GUIDED") {
+      const trades = buildGuidedTrades();
+      const total = guidedRows.length;
+      if (trades.length === 0) {
+        setImportValidated({ ok: false, count: 0, message: "✗ No complete rows yet" });
+        return;
+      }
+      if (trades.length > 50) {
+        setImportValidated({ ok: false, count: trades.length, message: `✗ ${trades.length} rows (max 50 per import)` });
+        return;
+      }
+      const skipped = total - trades.length;
+      const suffix = skipped > 0 ? ` (${skipped} incomplete row${skipped === 1 ? "" : "s"} will be skipped)` : "";
+      setImportValidated({ ok: true, count: trades.length, message: `✓ ${trades.length} valid trade${trades.length === 1 ? "" : "s"} ready to import${suffix}` });
+      return;
+    }
     let parsed: unknown;
     try {
       parsed = JSON.parse(importRaw);
@@ -100,7 +217,11 @@ export default function JournalPage() {
   async function runImport() {
     if (!importValidated?.ok || importing) return;
     let trades: unknown;
-    try { trades = JSON.parse(importRaw); } catch { setImportError("Invalid JSON"); return; }
+    if (importTab === "GUIDED") {
+      trades = buildGuidedTrades();
+    } else {
+      try { trades = JSON.parse(importRaw); } catch { setImportError("Invalid JSON"); return; }
+    }
     setImporting(true);
     setImportError(null);
     try {
@@ -120,6 +241,7 @@ export default function JournalPage() {
       setImportToast(`✓ ${json.imported} imported, ${json.skipped} skipped`);
       setImportOpen(false);
       setImportRaw("");
+      setGuidedRows([blankGuidedRow()]);
       setImportValidated(null);
       await loadJournal();
     } catch (err: any) {
@@ -308,25 +430,172 @@ export default function JournalPage() {
         onClick={(e) => { if (e.target === e.currentTarget) setImportOpen(false); }}
       >
         <div style={{ background: "#1a1a1e", border: "1px solid #2a2a2e", borderRadius: 6, padding: 24, width: 640, maxWidth: "calc(100vw - 32px)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
             <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "3px", color: "#d4a520" }}>BULK IMPORT</div>
             <button
               onClick={() => setImportOpen(false)}
               style={{ background: "transparent", border: "none", color: "#666670", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: "0 4px" }}
             >×</button>
           </div>
-          <textarea
-            value={importRaw}
-            onChange={(e) => { setImportRaw(e.target.value); setImportValidated(null); setImportError(null); }}
-            placeholder="Paste JSON array of trade objects. Each object follows the journal entry schema. Minimum fields: direction, session, score, grade, source."
-            style={{
-              width: "100%", minHeight: 220, resize: "vertical",
-              background: "#111115", border: "1px solid #2a2a2e", borderRadius: 4,
-              color: "#e0e0e0", fontFamily: "JetBrains Mono, monospace", fontSize: 11,
-              padding: "10px 12px", outline: "none", boxSizing: "border-box",
-              lineHeight: 1.5,
-            }}
-          />
+
+          {/* Tab toggle */}
+          <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+            {(["GUIDED", "RAW"] as const).map((t) => {
+              const active = importTab === t;
+              return (
+                <button
+                  key={t}
+                  onClick={() => { setImportTab(t); setImportValidated(null); setImportError(null); }}
+                  style={{
+                    padding: "5px 12px",
+                    background: active ? "#d4a520" : "transparent",
+                    border: `1px solid ${active ? "#d4a520" : "#2a2a2e"}`,
+                    borderRadius: 4,
+                    cursor: "pointer",
+                    fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "2px",
+                    color: active ? "#0d0d0f" : "#888",
+                    fontWeight: active ? 700 : 400,
+                  }}
+                >{t === "GUIDED" ? "GUIDED IMPORT" : "RAW JSON"}</button>
+              );
+            })}
+          </div>
+
+          {importTab === "RAW" && (
+            <textarea
+              value={importRaw}
+              onChange={(e) => { setImportRaw(e.target.value); setImportValidated(null); setImportError(null); }}
+              placeholder="Paste JSON array of trade objects. Each object follows the journal entry schema. Minimum fields: direction, session, score, grade, source."
+              style={{
+                width: "100%", minHeight: 220, resize: "vertical",
+                background: "#111115", border: "1px solid #2a2a2e", borderRadius: 4,
+                color: "#e0e0e0", fontFamily: "JetBrains Mono, monospace", fontSize: 11,
+                padding: "10px 12px", outline: "none", boxSizing: "border-box",
+                lineHeight: 1.5,
+              }}
+            />
+          )}
+
+          {importTab === "GUIDED" && (
+            <div style={{ maxHeight: 360, overflowY: "auto", border: "1px solid #2a2a2e", borderRadius: 4, padding: 10, background: "#111115" }}>
+              <div style={{
+                display: "grid",
+                gridTemplateColumns: "120px 90px 90px 90px 90px 70px 28px",
+                gap: 6, marginBottom: 6,
+              }}>
+                {["DATE", "DIR", "ENTRY", "STOP", "RESULT", "R", ""].map((h) => (
+                  <span key={h} style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 8, letterSpacing: "2px", color: "#666670" }}>{h}</span>
+                ))}
+              </div>
+              {guidedRows.map((row, i) => {
+                const complete = isRowComplete(row);
+                const inputBase: React.CSSProperties = {
+                  background: "#1a1a1e",
+                  border: `1px solid ${complete ? "#2a2a2e" : "#3a2a2e"}`,
+                  borderRadius: 3,
+                  color: "#e0e0e0",
+                  fontFamily: "JetBrains Mono, monospace",
+                  fontSize: 11,
+                  padding: "5px 7px",
+                  outline: "none",
+                  width: "100%", boxSizing: "border-box",
+                };
+                return (
+                  <div
+                    key={i}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "120px 90px 90px 90px 90px 70px 28px",
+                      gap: 6, marginBottom: 6, alignItems: "center",
+                    }}
+                  >
+                    <input
+                      type="date"
+                      value={row.date}
+                      onChange={(e) => setGuidedField(i, "date", e.target.value)}
+                      style={inputBase}
+                    />
+                    <select
+                      value={row.direction}
+                      onChange={(e) => setGuidedField(i, "direction", e.target.value as GuidedRow["direction"])}
+                      style={{ ...inputBase, color: row.direction === "LONG" ? "#22c55e" : "#ef4444", fontWeight: 700 }}
+                    >
+                      <option value="LONG">LONG</option>
+                      <option value="SHORT">SHORT</option>
+                    </select>
+                    <input
+                      type="number" step="0.01"
+                      placeholder="78.50"
+                      value={row.entry}
+                      onChange={(e) => setGuidedField(i, "entry", e.target.value)}
+                      style={inputBase}
+                    />
+                    <input
+                      type="number" step="0.01"
+                      placeholder="78.00"
+                      value={row.stop}
+                      onChange={(e) => setGuidedField(i, "stop", e.target.value)}
+                      style={inputBase}
+                    />
+                    <select
+                      value={row.result}
+                      onChange={(e) => setGuidedField(i, "result", e.target.value as GuidedResult)}
+                      style={{
+                        ...inputBase,
+                        color: row.result === "WIN" ? "#22c55e" : row.result === "LOSS" ? "#ef4444" : "#d4a520",
+                        fontWeight: 700,
+                      }}
+                    >
+                      <option value="WIN">WIN</option>
+                      <option value="LOSS">LOSS</option>
+                      <option value="SCRATCH">SCR</option>
+                    </select>
+                    <input
+                      type="number" step="0.1"
+                      placeholder={row.result === "WIN" ? "1.0" : row.result === "LOSS" ? "-1.0" : "0"}
+                      value={row.result_r}
+                      onChange={(e) => setGuidedField(i, "result_r", e.target.value)}
+                      style={inputBase}
+                    />
+                    <button
+                      onClick={() => {
+                        setGuidedRows((rows) => rows.length > 1 ? rows.filter((_, idx) => idx !== i) : rows);
+                        setImportValidated(null);
+                      }}
+                      disabled={guidedRows.length <= 1}
+                      title={guidedRows.length <= 1 ? "At least one row required" : "Remove row"}
+                      style={{
+                        background: "transparent", border: "1px solid #2a2a2e", borderRadius: 3,
+                        cursor: guidedRows.length <= 1 ? "not-allowed" : "pointer",
+                        color: "#666670", fontSize: 14, lineHeight: 1, padding: "3px 0",
+                      }}
+                    >×</button>
+                  </div>
+                );
+              })}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
+                <button
+                  onClick={() => {
+                    setGuidedRows((rows) => rows.length < MAX_GUIDED_ROWS ? [...rows, blankGuidedRow()] : rows);
+                    setImportValidated(null);
+                  }}
+                  disabled={guidedRows.length >= MAX_GUIDED_ROWS}
+                  style={{
+                    padding: "5px 12px", background: "transparent",
+                    border: `1px solid ${guidedRows.length >= MAX_GUIDED_ROWS ? "#2a2a2e" : "#d4a520"}`,
+                    borderRadius: 3,
+                    cursor: guidedRows.length >= MAX_GUIDED_ROWS ? "not-allowed" : "pointer",
+                    fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "2px",
+                    color: guidedRows.length >= MAX_GUIDED_ROWS ? "#444450" : "#d4a520",
+                  }}
+                >+ ADD ROW</button>
+                <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "1px", color: "#666670" }}>
+                  {guidedRows.length} / {MAX_GUIDED_ROWS} rows
+                </span>
+              </div>
+            </div>
+          )}
+
           {importValidated && (
             <div style={{
               marginTop: 10, fontFamily: "JetBrains Mono, monospace", fontSize: 11, letterSpacing: "1px",
@@ -343,11 +612,11 @@ export default function JournalPage() {
           <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
             <button
               onClick={validateImport}
-              disabled={!importRaw.trim() || importing}
+              disabled={(importTab === "RAW" ? !importRaw.trim() : guidedRows.length === 0) || importing}
               style={{
                 padding: "9px 16px", flex: 1,
                 background: "transparent", border: "1px solid #2a2a2e", borderRadius: 4,
-                cursor: !importRaw.trim() || importing ? "not-allowed" : "pointer",
+                cursor: ((importTab === "RAW" ? !importRaw.trim() : guidedRows.length === 0) || importing) ? "not-allowed" : "pointer",
                 fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "2px",
                 color: "#888", fontWeight: 700,
               }}
