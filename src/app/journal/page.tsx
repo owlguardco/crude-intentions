@@ -2,6 +2,25 @@
 
 import { useState, useEffect } from "react";
 import LogOutcomeModal, { type TradeEntry } from "@/components/journal/LogOutcomeModal";
+import {
+  FACTOR_KEYS,
+  type CalibrationSnapshot,
+  type FactorKey,
+} from "@/lib/journal/calibration";
+
+const FACTOR_LABELS: Record<FactorKey, string> = {
+  ema_stack_aligned: "EMA Stack",
+  rsi_reset_zone: "RSI Reset",
+  price_at_key_level: "Key Level",
+  session_timing: "Session",
+  market_bias: "Mkt Bias",
+  candle_confirmation: "Candle Conf",
+  volume_profile: "Vol Profile",
+  no_eia_window: "No EIA",
+};
+
+const fmtPct = (n: number) => `${n.toFixed(1)}%`;
+const fmtSignedPp = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(1)}`;
 
 function OutcomeBadge({ status, result }: { status: string; result?: string | null }) {
   const key = result || status;
@@ -32,6 +51,7 @@ function GradeBadge({ grade }: { grade: string }) {
 const FILTER_TABS = ["ALL", "LONG", "SHORT", "NO TRADE", "WIN", "LOSS", "OPEN"];
 
 export default function JournalPage() {
+  const [mode, setMode] = useState<"JOURNAL" | "CALIBRATION">("JOURNAL");
   const [filter, setFilter] = useState("ALL");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [expandedPostmortem, setExpandedPostmortem] = useState<string | null>(null);
@@ -41,6 +61,9 @@ export default function JournalPage() {
   const [openOutcomeModal, setOpenOutcomeModal] = useState<TradeEntry | null>(null);
   const [backtesting, setBacktesting] = useState(false);
   const [backtestToast, setBacktestToast] = useState<string | null>(null);
+  const [calSnapshot, setCalSnapshot] = useState<CalibrationSnapshot | null>(null);
+  const [calNotes, setCalNotes] = useState<string[]>([]);
+  const [calLoaded, setCalLoaded] = useState(false);
 
   const loadJournal = async (silent = false) => {
     try {
@@ -59,6 +82,32 @@ export default function JournalPage() {
     return () => clearInterval(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastCount]);
+
+  const loadCalibration = async () => {
+    try {
+      const apiKey = process.env.NEXT_PUBLIC_INTERNAL_API_KEY ?? "";
+      const res = await fetch("/api/journal/observer", {
+        headers: { "x-api-key": apiKey },
+      });
+      if (!res.ok) {
+        setCalLoaded(true);
+        return;
+      }
+      const json = await res.json();
+      setCalSnapshot(json.snapshot ?? null);
+      setCalNotes(Array.isArray(json.notes) ? json.notes : []);
+      setCalLoaded(true);
+    } catch {
+      setCalLoaded(true);
+    }
+  };
+
+  useEffect(() => {
+    if (mode !== "CALIBRATION") return;
+    loadCalibration();
+    const t = setInterval(loadCalibration, 30000);
+    return () => clearInterval(t);
+  }, [mode]);
 
   const backtestableCount = decisions.filter(
     (d: any) => d.outcome?.status === 'OPEN' && d.tp1_price != null && d.stop_price != null,
@@ -121,8 +170,98 @@ export default function JournalPage() {
     return d.direction === filter;
   }).slice().reverse();
 
+  const modeBtn = (m: "JOURNAL" | "CALIBRATION") => ({
+    padding: "6px 14px",
+    background: mode === m ? "#d4a520" : "transparent",
+    border: `1px solid ${mode === m ? "#d4a520" : "#2a2a2e"}`,
+    borderRadius: 4,
+    cursor: "pointer",
+    fontFamily: "JetBrains Mono, monospace",
+    fontSize: 10,
+    letterSpacing: "2px",
+    color: mode === m ? "#0d0d0f" : "#888",
+    fontWeight: mode === m ? 700 : 400,
+  } as const);
+
   return (
     <>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
+      {/* Mode toggle */}
+      <div style={{ display: "flex", gap: 6 }}>
+        <button onClick={() => setMode("JOURNAL")} style={modeBtn("JOURNAL")}>JOURNAL</button>
+        <button onClick={() => setMode("CALIBRATION")} style={modeBtn("CALIBRATION")}>CALIBRATION</button>
+      </div>
+
+      {mode === "CALIBRATION" ? (
+        <CalibrationPanel snapshot={calSnapshot} notes={calNotes} loaded={calLoaded} />
+      ) : (
+        <JournalView
+          decisions={decisions}
+          filtered={filtered}
+          filter={filter}
+          setFilter={setFilter}
+          live={live}
+          total={total}
+          taken={taken}
+          blocked={blocked}
+          winRate={winRate}
+          avgScore={avgScore}
+          expanded={expanded}
+          setExpanded={setExpanded}
+          expandedPostmortem={expandedPostmortem}
+          setExpandedPostmortem={setExpandedPostmortem}
+          setOpenOutcomeModal={setOpenOutcomeModal}
+          backtesting={backtesting}
+          backtestableCount={backtestableCount}
+          runBacktest={runBacktest}
+        />
+      )}
+    </div>
+
+    {openOutcomeModal && (
+      <LogOutcomeModal
+        trade={openOutcomeModal}
+        onClose={() => setOpenOutcomeModal(null)}
+        onSave={handleSaveOutcome}
+      />
+    )}
+    {backtestToast && (
+      <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 1000, padding: "10px 16px", background: "#1a1a1e", border: "1px solid #d4a520", borderRadius: 4, fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: "#e0e0e0", letterSpacing: "1px", boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
+        {backtestToast}
+      </div>
+    )}
+    </>
+  );
+}
+
+interface JournalViewProps {
+  decisions: any[];
+  filtered: any[];
+  filter: string;
+  setFilter: (f: string) => void;
+  live: boolean;
+  total: number;
+  taken: number;
+  blocked: number;
+  winRate: string;
+  avgScore: string;
+  expanded: string | null;
+  setExpanded: (v: string | null) => void;
+  expandedPostmortem: string | null;
+  setExpandedPostmortem: (v: string | null) => void;
+  setOpenOutcomeModal: (t: TradeEntry | null) => void;
+  backtesting: boolean;
+  backtestableCount: number;
+  runBacktest: () => void;
+}
+
+function JournalView({
+  filtered, filter, setFilter, live, total, taken, blocked, winRate, avgScore,
+  expanded, setExpanded, expandedPostmortem, setExpandedPostmortem,
+  setOpenOutcomeModal, backtesting, backtestableCount, runBacktest,
+}: JournalViewProps) {
+  return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
       {/* Stats bar */}
@@ -325,19 +464,114 @@ export default function JournalPage() {
         </table>
       </div>
     </div>
+  );
+}
 
-    {openOutcomeModal && (
-      <LogOutcomeModal
-        trade={openOutcomeModal}
-        onClose={() => setOpenOutcomeModal(null)}
-        onSave={handleSaveOutcome}
-      />
-    )}
-    {backtestToast && (
-      <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 1000, padding: "10px 16px", background: "#1a1a1e", border: "1px solid #d4a520", borderRadius: 4, fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: "#e0e0e0", letterSpacing: "1px", boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
-        {backtestToast}
+interface CalibrationPanelProps {
+  snapshot: CalibrationSnapshot | null;
+  notes: string[];
+  loaded: boolean;
+}
+
+function CalibrationPanel({ snapshot, notes, loaded }: CalibrationPanelProps) {
+  if (!loaded) {
+    return (
+      <div style={{ background: "#1a1a1e", border: "1px solid #2a2a2e", borderRadius: 6, padding: 32, textAlign: "center" }}>
+        <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "2px", color: "#444450" }}>
+          LOADING CALIBRATION...
+        </span>
       </div>
-    )}
-    </>
+    );
+  }
+  if (!snapshot) {
+    return (
+      <div style={{ background: "#1a1a1e", border: "1px solid #2a2a2e", borderRadius: 6, padding: 32, textAlign: "center" }}>
+        <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, letterSpacing: "2px", color: "#888" }}>
+          NO CALIBRATION DATA — close trades to begin
+        </span>
+      </div>
+    );
+  }
+
+  const factorsStrong = FACTOR_KEYS.filter(
+    (k) => snapshot.by_factor[k]?.drift_flag === false,
+  ).length;
+  const edgeColor =
+    factorsStrong >= 6 ? "#22c55e" : factorsStrong >= 4 ? "#d4a520" : "#ef4444";
+  const r30 = snapshot.overall.rolling_30;
+  const r30Display = r30.trades < 5 ? "—" : fmtPct(r30.win_rate);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* Summary cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+        {[
+          ["OVERALL WIN RATE", fmtPct(snapshot.overall.win_rate), `${snapshot.totals.trades_closed} trades closed`, "#e0e0e0"],
+          ["LAST 30 TRADES", r30Display, `${r30.trades} trades`, "#e0e0e0"],
+          ["EDGE HEALTH", `${factorsStrong} / 8`, "factors with strong edge", edgeColor],
+        ].map(([label, value, sub, color]) => (
+          <div key={label} style={{ background: "#1a1a1e", border: "1px solid #2a2a2e", borderRadius: 6, padding: "18px 20px" }}>
+            <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "2px", color: "#888", marginBottom: 10 }}>{label}</div>
+            <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 28, fontWeight: 700, color, marginBottom: 6 }}>{value}</div>
+            <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, color: "#888" }}>{sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Factor edge breakdown */}
+      <div style={{ background: "#1a1a1e", border: "1px solid #2a2a2e", borderRadius: 6, padding: 20 }}>
+        <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "3px", color: "#d4a520", marginBottom: 14 }}>
+          FACTOR EDGE BREAKDOWN
+        </div>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr>
+              {["FACTOR", "PASS W%", "FAIL W%", "EDGE (PP)", "STATUS"].map((h) => (
+                <th key={h} style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "2px", color: "#888", textAlign: "left", padding: "0 14px 10px 0", borderBottom: "1px solid #2a2a2e" }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {FACTOR_KEYS.map((key) => {
+              const f = snapshot.by_factor[key];
+              if (!f) return null;
+              const strong = f.drift_flag === false;
+              const statusColor = strong ? "#22c55e" : "#d4a520";
+              const edgeRowColor = f.edge_pp >= 0 ? "#22c55e" : "#ef4444";
+              return (
+                <tr key={key}>
+                  <td style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 12, color: "#e0e0e0", padding: "11px 14px 11px 0", borderBottom: "1px solid #2a2a2e40" }}>{FACTOR_LABELS[key]}</td>
+                  <td style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 12, color: "#e0e0e0", padding: "11px 14px 11px 0", borderBottom: "1px solid #2a2a2e40" }}>{fmtPct(f.pass_stats.win_rate * 100)}</td>
+                  <td style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 12, color: "#e0e0e0", padding: "11px 14px 11px 0", borderBottom: "1px solid #2a2a2e40" }}>{fmtPct(f.fail_stats.win_rate * 100)}</td>
+                  <td style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 12, color: edgeRowColor, padding: "11px 14px 11px 0", borderBottom: "1px solid #2a2a2e40" }}>{fmtSignedPp(f.edge_pp)}</td>
+                  <td style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 12, color: statusColor, fontWeight: 700, letterSpacing: "1px", padding: "11px 14px 11px 0", borderBottom: "1px solid #2a2a2e40" }}>{strong ? "STRONG" : "WEAK"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Observer notes */}
+      <div style={{ background: "#1a1a1e", border: "1px solid #2a2a2e", borderRadius: 6, padding: 20 }}>
+        <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "3px", color: "#d4a520", marginBottom: 14 }}>
+          OBSERVER NOTES
+        </div>
+        {notes.length === 0 ? (
+          <div style={{ fontFamily: "Inter, sans-serif", fontSize: 12, color: "#888", fontStyle: "italic" }}>
+            No alerts — system operating within normal parameters
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {notes.map((note, i) => (
+              <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "8px 10px", background: "#d4a52010", border: "1px solid #d4a52030", borderRadius: 4 }}>
+                <span style={{ color: "#d4a520", fontFamily: "JetBrains Mono, monospace", fontSize: 13, flexShrink: 0 }}>⚠</span>
+                <span style={{ fontFamily: "Inter, sans-serif", fontSize: 12, color: "#e0e0e0", lineHeight: 1.55 }}>{note}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
