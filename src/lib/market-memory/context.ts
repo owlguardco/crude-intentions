@@ -121,6 +121,24 @@ export interface MarketContext {
 
   // New in v1.2 — supply context derived from EIA
   supply_context?: SupplyContext | null;
+
+  // New in v1.3 — weekly macro brief from Sunday cron
+  weekly_bias?: WeeklyBrief | null;
+}
+
+export interface WeeklyBrief {
+  direction: BiasDirection;
+  strength: BiasStrength;
+  rationale: string;
+  invalidation: string | null;
+  key_levels: { resistance: number[]; support: number[] };
+  macro_inputs: {
+    dxy: number | null;
+    vix: number | null;
+    ovx: number | null;
+    xle: number | null;
+  };
+  generated_at: string;
 }
 
 export type CushingTrend = 'BUILDING' | 'DRAWING' | 'FLAT';
