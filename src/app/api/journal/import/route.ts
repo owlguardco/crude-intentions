@@ -139,6 +139,7 @@ export async function POST(req: NextRequest) {
           close_price: closePrice,
           forced_status: status,
           forced_ticks: ticksRaw,
+          skipPostmortem: true,
         });
         if (!closeRes.ok) {
           errors.push({

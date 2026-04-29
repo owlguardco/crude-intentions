@@ -21,6 +21,7 @@ export interface CloseTradeInput {
   forced_status?: CloseStatus;
   forced_ticks?: number;
   backtest_source?: boolean;
+  skipPostmortem?: boolean;
 }
 
 export interface CloseTradeResult {
@@ -105,7 +106,10 @@ export async function closeTrade(input: CloseTradeInput): Promise<CloseTradeResu
   await writeContext(kv, updatedCtx);
 
   // Auto-fire post-mortem on every close. Fire-and-forget — never blocks.
-  firePostMortem(updated);
+  // Suppressed on bulk import so a 50-trade backfill doesn't fire 50 LLM calls.
+  if (!input.skipPostmortem) {
+    firePostMortem(updated);
+  }
 
   return {
     ok: true,
