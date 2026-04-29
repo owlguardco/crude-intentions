@@ -975,6 +975,46 @@ function CalibrationPanel({ snapshot, notes, loaded }: CalibrationPanelProps) {
         </table>
       </div>
 
+      {/* Supply bias performance */}
+      <div style={{ background: "#1a1a1e", border: "1px solid #2a2a2e", borderRadius: 6, padding: 20 }}>
+        <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "3px", color: "#d4a520", marginBottom: 14 }}>
+          SUPPLY BIAS PERFORMANCE
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+          {(["BEARISH", "NEUTRAL", "BULLISH"] as const).map((key) => {
+            const headerColor = key === "BEARISH" ? "#ef4444" : key === "BULLISH" ? "#22c55e" : "#888";
+            const bucket = snapshot.by_supply_bias?.[key];
+            const enoughSamples = !!bucket && bucket.trades >= 5 && bucket.wilson_ci !== null;
+            const winRateDisplay = enoughSamples ? `${(bucket!.win_rate * 100).toFixed(1)}%` : "—";
+            const ci = enoughSamples && bucket!.wilson_ci
+              ? `[${bucket!.wilson_ci.low.toFixed(1)}%, ${bucket!.wilson_ci.high.toFixed(1)}%]`
+              : null;
+            const trades = bucket?.trades ?? 0;
+            return (
+              <div key={key} style={{ background: "#111115", border: "1px solid #2a2a2e", borderRadius: 4, padding: "14px 16px", borderTop: `3px solid ${headerColor}` }}>
+                <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "2px", color: headerColor, fontWeight: 700, marginBottom: 10 }}>
+                  {key}
+                </div>
+                <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 22, fontWeight: 700, color: enoughSamples ? "#e0e0e0" : "#666670", marginBottom: 6 }}>
+                  {winRateDisplay}
+                </div>
+                <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, color: "#888", marginBottom: ci ? 6 : 0 }}>
+                  {trades} trade{trades === 1 ? "" : "s"}
+                  {!enoughSamples && trades > 0 && trades < 5 && (
+                    <span style={{ color: "#666670" }}> · need {5 - trades} more</span>
+                  )}
+                </div>
+                {ci && (
+                  <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, color: "#666670", letterSpacing: "1px" }}>
+                    95% CI {ci}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Observer notes */}
       <div style={{ background: "#1a1a1e", border: "1px solid #2a2a2e", borderRadius: 6, padding: 20 }}>
         <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "3px", color: "#d4a520", marginBottom: 14 }}>
