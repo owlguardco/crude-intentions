@@ -97,9 +97,9 @@ export async function PATCH(
   const entryPrice = entry.entry_price;
   const stopLoss = entry.stop_loss;
 
-  if (entryPrice == null || stopLoss == null) {
+  if (entryPrice == null) {
     return NextResponse.json(
-      { error: 'Entry is missing entry_price or stop_loss' },
+      { error: 'Entry is missing entry_price' },
       { status: 400 }
     );
   }
@@ -109,8 +109,12 @@ export async function PATCH(
   const ticks = isLong ? rawTicks : -rawTicks;
   const contracts = entry.contracts ?? 1;
   const dollars = ticks * 10 * contracts;
-  const riskTicks = Math.abs((entryPrice - stopLoss) / 0.01);
-  const rMultiple = riskTicks > 0 ? ticks / riskTicks : 0;
+
+  // R-multiple requires a stop. If none, skip the calculation and emit null
+  // for downstream consumers (calibration, market memory) instead of failing.
+  const riskTicks = stopLoss != null ? Math.abs((entryPrice - stopLoss) / 0.01) : 0;
+  const rMultiple: number | null =
+    stopLoss != null && riskTicks > 0 ? ticks / riskTicks : null;
 
   const status: 'WIN' | 'LOSS' | 'SCRATCH' =
     Math.abs(ticks) <= 2 ? 'SCRATCH' : ticks > 0 ? 'WIN' : 'LOSS';
@@ -144,7 +148,9 @@ export async function PATCH(
     id: entry.id,
     direction: entry.direction as 'LONG' | 'SHORT',
     outcome: status,
-    result_r: rMultiple,
+    // Market memory's prompt builder formats result_r with .toFixed(); pass 0
+    // when the trade had no stop so the renderer doesn't crash.
+    result_r: rMultiple ?? 0,
     score: entry.score,
     confidence_label: entry.confidence_label,
     session: entry.session,
