@@ -56,13 +56,20 @@ export async function PATCH(
   // touching outcome status or recalculating calibration.
   const pmParsed = PostmortemPatchSchema.safeParse(body);
   if (pmParsed.success) {
-    type StoredEntryWithPm = CalibrationEntry & { postmortem?: string | null };
+    type StoredEntryWithPm = CalibrationEntry & {
+      postmortem?: string | null;
+      postmortem_at?: string | null;
+    };
     const entries = (await kv.get<StoredEntryWithPm[]>('journal:entries')) ?? [];
     const idx = entries.findIndex((e) => e.id === id);
     if (idx === -1) {
       return NextResponse.json({ error: `Entry ${id} not found` }, { status: 404 });
     }
-    entries[idx] = { ...entries[idx], postmortem: pmParsed.data.postmortem };
+    entries[idx] = {
+      ...entries[idx],
+      postmortem: pmParsed.data.postmortem,
+      postmortem_at: new Date().toISOString(),
+    };
     await kv.set('journal:entries', entries);
     return NextResponse.json({ ok: true, postmortem_written: true });
   }

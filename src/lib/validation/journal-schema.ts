@@ -59,6 +59,7 @@ export const JournalWriteSchema = z.object({
   historical: z.boolean().default(false),
   alfred_fallback: z.boolean().default(false),
   postmortem: z.string().nullable().default(null),
+  postmortem_at: z.string().nullable().optional(),
   stop_price: z.number().finite().min(10).max(500).nullable().optional(),
   tp1_price: z.number().finite().min(10).max(500).nullable().optional(),
   tp2_price: z.number().finite().min(10).max(500).nullable().optional(),

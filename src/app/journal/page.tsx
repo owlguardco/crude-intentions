@@ -94,6 +94,8 @@ export default function JournalPage() {
   const [calSnapshot, setCalSnapshot] = useState<CalibrationSnapshot | null>(null);
   const [calNotes, setCalNotes] = useState<string[]>([]);
   const [calLoaded, setCalLoaded] = useState(false);
+  const [postmortemRunning, setPostmortemRunning] = useState<string | null>(null);
+  const [postmortemError, setPostmortemError] = useState<string | null>(null);
 
   // Import modal state
   const [importOpen, setImportOpen] = useState(false);
@@ -385,6 +387,30 @@ export default function JournalPage() {
     await loadJournal();
   }
 
+  async function runPostmortem(id: string) {
+    if (postmortemRunning) return;
+    setPostmortemRunning(id);
+    setPostmortemError(null);
+    try {
+      const res = await fetch(`/api/journal/${id}/postmortem`, {
+        method: 'POST',
+        headers: { 'x-api-key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY ?? '' },
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({} as { error?: string }));
+        throw new Error(j?.error ?? `Post-mortem failed (HTTP ${res.status})`);
+      }
+      await loadJournal();
+      setExpandedPostmortem(id);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      setPostmortemError(`✗ ${msg}`);
+      setTimeout(() => setPostmortemError(null), 4000);
+    } finally {
+      setPostmortemRunning(null);
+    }
+  }
+
   const total = decisions.length;
   const taken = decisions.filter((d: any) => d.direction !== "NO TRADE").length;
   const blocked = decisions.filter((d: any) => d.direction === "NO TRADE").length;
@@ -448,6 +474,8 @@ export default function JournalPage() {
           backtestableCount={backtestableCount}
           runBacktest={runBacktest}
           openImport={() => setImportOpen(true)}
+          runPostmortem={runPostmortem}
+          postmortemRunning={postmortemRunning}
         />
       )}
     </div>
@@ -467,6 +495,11 @@ export default function JournalPage() {
     {importToast && (
       <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 1000, padding: "10px 16px", background: "#1a1a1e", border: "1px solid #22c55e", borderRadius: 4, fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: "#e0e0e0", letterSpacing: "1px", boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
         {importToast}
+      </div>
+    )}
+    {postmortemError && (
+      <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 1000, padding: "10px 16px", background: "#1a1a1e", border: "1px solid #ef4444", borderRadius: 4, fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: "#e0e0e0", letterSpacing: "1px", boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
+        {postmortemError}
       </div>
     )}
     {importOpen && (
@@ -707,12 +740,15 @@ interface JournalViewProps {
   backtestableCount: number;
   runBacktest: () => void;
   openImport: () => void;
+  runPostmortem: (id: string) => Promise<void>;
+  postmortemRunning: string | null;
 }
 
 function JournalView({
   filtered, filter, setFilter, live, total, taken, blocked, winRate, avgScore,
   expanded, setExpanded, expandedPostmortem, setExpandedPostmortem,
   setOpenOutcomeModal, backtesting, backtestableCount, runBacktest, openImport,
+  runPostmortem, postmortemRunning,
 }: JournalViewProps) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -869,8 +905,16 @@ function JournalView({
                 {expandedPostmortem === d.id && d.postmortem && (
                   <tr key={`${d.id}-postmortem`}>
                     <td colSpan={11} style={{ padding: "0 0 12px 0", borderBottom: "1px solid #2a2a2e20" }}>
-                      <div style={{ fontFamily: "Inter, sans-serif", fontSize: 12, fontStyle: "italic", color: "#888", lineHeight: 1.65, padding: "10px 14px", background: "#111115", borderLeft: "2px solid #d4a520", borderRadius: 3 }}>
-                        {d.postmortem}
+                      <div style={{ padding: "10px 14px", background: "#111115", borderLeft: "2px solid #d4a520", borderRadius: 3 }}>
+                        <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "2px", color: "#d4a520", marginBottom: 6 }}>POST-MORTEM</div>
+                        <div style={{ fontFamily: "Inter, sans-serif", fontSize: 12, fontStyle: "italic", color: "#888", lineHeight: 1.65 }}>
+                          {d.postmortem}
+                        </div>
+                        {d.postmortem_at && (
+                          <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, color: "#444450", marginTop: 8, letterSpacing: "1px" }}>
+                            {new Date(d.postmortem_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                          </div>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -915,9 +959,33 @@ function JournalView({
                                 <div style={{ fontSize: 12, color: "#888", lineHeight: 1.65 }}>{d.reasoning}</div>
                               </div>
                             )}
-                            <button style={{ marginTop: 14, padding: "7px 14px", background: "transparent", border: "1px solid #2a2a2e", borderRadius: 4, cursor: "pointer", fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "2px", color: "#666670" }}>
-                              RUN POST-MORTEM
-                            </button>
+                            {(() => {
+                              const isClosed = d.outcome?.status === "WIN" || d.outcome?.status === "LOSS" || d.outcome?.status === "SCRATCH";
+                              const running = postmortemRunning === d.id;
+                              const hasPm = !!d.postmortem;
+                              const disabled = !isClosed || running;
+                              return (
+                                <button
+                                  onClick={() => { if (!disabled) void runPostmortem(d.id); }}
+                                  disabled={disabled}
+                                  title={!isClosed ? "Trade must be closed before post-mortem" : hasPm ? "Re-run post-mortem" : "Generate ALFRED post-mortem"}
+                                  style={{
+                                    marginTop: 14,
+                                    padding: "7px 14px",
+                                    background: "transparent",
+                                    border: `1px solid ${disabled ? "#2a2a2e" : "#d4a520"}`,
+                                    borderRadius: 4,
+                                    cursor: disabled ? "not-allowed" : "pointer",
+                                    fontFamily: "JetBrains Mono, monospace",
+                                    fontSize: 9,
+                                    letterSpacing: "2px",
+                                    color: disabled ? "#666670" : "#d4a520",
+                                  }}
+                                >
+                                  {running ? "RUNNING..." : hasPm ? "RE-RUN POST-MORTEM" : "RUN POST-MORTEM"}
+                                </button>
+                              );
+                            })()}
                           </div>
                         </div>
                       </div>
