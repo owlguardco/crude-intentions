@@ -329,7 +329,7 @@ export function recalculateCalibration(entries: CalibrationEntry[]): Calibration
   };
 }
 
-function wilsonCi(wins: number, n: number): { low: number; high: number } {
+export function wilsonCi(wins: number, n: number): { low: number; high: number } {
   if (n === 0) return { low: 0, high: 0 };
   const z = 1.96;
   const p = wins / n;
