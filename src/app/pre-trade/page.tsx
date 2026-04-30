@@ -22,6 +22,20 @@ interface MTFConsensusOut {
   breakdown: Record<MTFTimeframe, { agrees: boolean; weight: number }>;
 }
 
+interface PredictedAccuracy {
+  win_rate_estimate: number;
+  confidence_interval: [number, number];
+  sample_size: number;
+  grade_bucket: string;
+  basis: string;
+}
+
+interface CalibrationTotalsLite {
+  avg_win_r?: number;
+  avg_loss_r?: number;
+  expectancy_r?: number;
+}
+
 interface AnalysisResult {
   score: number;
   grade: string;
@@ -34,7 +48,8 @@ interface AnalysisResult {
   disclaimer: string;
   fallback?: boolean;
   mtf_consensus?: MTFConsensusOut;
-  predicted_accuracy?: unknown;
+  predicted_accuracy?: PredictedAccuracy | null;
+  cohort_totals?: CalibrationTotalsLite;
   stop_price?: number | null;
   tp1_price?: number | null;
   tp2_price?: number | null;
@@ -768,10 +783,62 @@ export default function PreTradePage() {
                 {result.decision}
               </span>
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 15, color: "#e0e0e0" }}>{result.score}/8</span>
+                <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 15, color: "#e0e0e0" }}>{result.score}/12</span>
                 <GradeBadge grade={result.grade} />
               </div>
             </div>
+
+            {/* Predicted accuracy card */}
+            {(() => {
+              const pa = result.predicted_accuracy;
+              const ct = result.cohort_totals;
+              const insufficient = !pa || pa.sample_size === 0;
+              if (insufficient) {
+                return (
+                  <div style={{ marginBottom: 16, padding: "12px 14px", background: "#111115", border: "1px solid #2a2a2e", borderRadius: 4 }}>
+                    <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "2px", color: "#666670", marginBottom: 6 }}>
+                      PREDICTED ACCURACY
+                    </div>
+                    <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: "#666670" }}>
+                      Insufficient data — need more trades in this grade bucket
+                    </div>
+                  </div>
+                );
+              }
+              const wr = (pa.win_rate_estimate * 100).toFixed(1);
+              const ciLow = (pa.confidence_interval[0] * 100).toFixed(1);
+              const ciHigh = (pa.confidence_interval[1] * 100).toFixed(1);
+              return (
+                <div style={{ marginBottom: 16, padding: "12px 14px", background: "#111115", border: "1px solid #d4a52040", borderRadius: 4 }}>
+                  <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "2px", color: "#d4a520", marginBottom: 8 }}>
+                    PREDICTED ACCURACY
+                  </div>
+                  <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 14, color: "#e0e0e0", marginBottom: 4 }}>
+                    {pa.grade_bucket} · {wr}% · 95% CI [{ciLow}%–{ciHigh}%]
+                  </div>
+                  <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, color: "#888", marginBottom: ct ? 10 : 0 }}>
+                    n={pa.sample_size} · {pa.basis}
+                  </div>
+                  {ct && (
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, paddingTop: 10, borderTop: "1px solid #2a2a2e" }}>
+                      {[
+                        ["AVG R (WIN)", typeof ct.avg_win_r === "number" ? `${ct.avg_win_r >= 0 ? "+" : ""}${ct.avg_win_r.toFixed(2)}R` : "—"],
+                        ["AVG R (LOSS)", typeof ct.avg_loss_r === "number" ? `${ct.avg_loss_r >= 0 ? "+" : ""}${ct.avg_loss_r.toFixed(2)}R` : "—"],
+                        ["EXPECTANCY", typeof ct.expectancy_r === "number" ? `${ct.expectancy_r >= 0 ? "+" : ""}${ct.expectancy_r.toFixed(2)}R` : "—"],
+                      ].map(([k, v]) => (
+                        <div key={k}>
+                          <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "1px", color: "#666670", marginBottom: 3 }}>{k}</div>
+                          <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: "#e0e0e0" }}>{v}</div>
+                        </div>
+                      ))}
+                      <div style={{ gridColumn: "1 / span 3", fontFamily: "JetBrains Mono, monospace", fontSize: 8, color: "#444450", letterSpacing: "1px", marginTop: 2 }}>
+                        cohort-level
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Checklist */}
             <div style={{ marginBottom: 14 }}>

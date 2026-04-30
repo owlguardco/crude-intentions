@@ -332,6 +332,7 @@ Score this setup. Return JSON only.`;
 
       // Append predicted accuracy from calibration history (null until first trade closes)
       let predicted_accuracy = null;
+      let cohort_totals: { avg_win_r: number; avg_loss_r: number; expectancy_r: number } | undefined;
       try {
         const snapshot = await kv.get<CalibrationSnapshot>('calibration:latest');
         if (snapshot) {
@@ -352,6 +353,11 @@ Score this setup. Return JSON only.`;
             snapshot,
             closedEntries
           );
+          cohort_totals = {
+            avg_win_r: snapshot.totals.avg_win_r,
+            avg_loss_r: snapshot.totals.avg_loss_r,
+            expectancy_r: snapshot.totals.expectancy_r,
+          };
         }
       } catch (calibErr) {
         console.warn('[ANALYZE-SETUP] Calibration read skipped:', calibErr);
@@ -369,6 +375,7 @@ Score this setup. Return JSON only.`;
       return NextResponse.json({
         ...result,
         predicted_accuracy,
+        ...(cohort_totals ? { cohort_totals } : {}),
         ...(mtf_consensus ? { mtf_consensus } : {}),
         ...(entry_alignment ? { entry_alignment } : {}),
         ...(fundamentalContext ? { fundamental_context: fundamentalContext } : {}),

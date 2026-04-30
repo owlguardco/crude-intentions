@@ -23,6 +23,7 @@ const FACTOR_LABELS: Record<FactorKey, string> = {
 
 const fmtPct = (n: number) => `${n.toFixed(1)}%`;
 const fmtSignedPp = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(1)}`;
+const fmtR = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(2)}R`;
 
 function RBadge({ r }: { r: number | null | undefined }) {
   if (r == null || !Number.isFinite(r)) return null;
@@ -314,18 +315,26 @@ export default function JournalPage() {
   const loadCalibration = async () => {
     try {
       const apiKey = process.env.NEXT_PUBLIC_INTERNAL_API_KEY ?? "";
-      const res = await fetch("/api/journal/observer", {
-        headers: { "x-api-key": apiKey },
-      });
-      if (!res.ok) {
-        setCalLoaded(true);
-        return;
+      const headers = { "x-api-key": apiKey };
+      const [snapRes, obsRes] = await Promise.all([
+        fetch("/api/calibration", { headers }),
+        fetch("/api/journal/observer", { headers }),
+      ]);
+      if (snapRes.ok) {
+        const snapJson = await snapRes.json();
+        setCalSnapshot(snapJson.snapshot ?? null);
+      } else {
+        setCalSnapshot(null);
       }
-      const json = await res.json();
-      setCalSnapshot(json.snapshot ?? null);
-      setCalNotes(Array.isArray(json.notes) ? json.notes : []);
-      setCalLoaded(true);
+      if (obsRes.ok) {
+        const obsJson = await obsRes.json();
+        setCalNotes(Array.isArray(obsJson.note) ? obsJson.note : []);
+      } else {
+        setCalNotes([]);
+      }
     } catch {
+      // hold last good values
+    } finally {
       setCalLoaded(true);
     }
   };
@@ -1095,6 +1104,128 @@ function CalibrationPanel({ snapshot, notes, loaded }: CalibrationPanelProps) {
             <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, color: "#888" }}>{sub}</div>
           </div>
         ))}
+      </div>
+
+      {/* Lifetime vs Last 30 — full stats columns */}
+      <div style={{ background: "#1a1a1e", border: "1px solid #2a2a2e", borderRadius: 6, padding: 20 }}>
+        <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "3px", color: "#d4a520", marginBottom: 14 }}>
+          LIFETIME vs LAST 30
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          {(() => {
+            const t = snapshot.totals;
+            const r30sufficient = r30.trades >= 5;
+            const cells = [
+              ["LIFETIME", t.trades_closed, t.win_rate * 100, t.avg_win_r, t.avg_loss_r, t.expectancy_r, true],
+              ["LAST 30", r30.trades, r30.win_rate, NaN, NaN, NaN, r30sufficient],
+            ] as const;
+            return cells.map(([label, n, wr, awR, alR, exp, ok]) => {
+              if (!ok) {
+                return (
+                  <div key={label} style={{ background: "#111115", border: "1px solid #2a2a2e", borderRadius: 4, padding: "14px 16px" }}>
+                    <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "2px", color: "#d4a520", marginBottom: 12 }}>{label}</div>
+                    <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: "#666670" }}>Insufficient data ({n}/5)</div>
+                  </div>
+                );
+              }
+              const rows: Array<[string, string]> = [
+                ["TRADES", String(n)],
+                ["WIN RATE", fmtPct(wr)],
+              ];
+              if (Number.isFinite(awR)) rows.push(["AVG R (WIN)", fmtR(awR)]);
+              if (Number.isFinite(alR)) rows.push(["AVG R (LOSS)", fmtR(alR)]);
+              if (Number.isFinite(exp)) rows.push(["EXPECTANCY", fmtR(exp)]);
+              return (
+                <div key={label} style={{ background: "#111115", border: "1px solid #2a2a2e", borderRadius: 4, padding: "14px 16px" }}>
+                  <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "2px", color: "#d4a520", marginBottom: 12 }}>{label}</div>
+                  {rows.map(([k, v]) => (
+                    <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid #2a2a2e30" }}>
+                      <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, color: "#888", letterSpacing: "1px" }}>{k}</span>
+                      <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: "#e0e0e0" }}>{v}</span>
+                    </div>
+                  ))}
+                </div>
+              );
+            });
+          })()}
+        </div>
+      </div>
+
+      {/* By Confidence + By Session */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        {/* By Confidence */}
+        <div style={{ background: "#1a1a1e", border: "1px solid #2a2a2e", borderRadius: 6, padding: 20 }}>
+          <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "3px", color: "#d4a520", marginBottom: 14 }}>
+            BY CONFIDENCE
+          </div>
+          {snapshot.confidence_tiers_inverted && (
+            <div style={{ marginBottom: 12, padding: "8px 12px", background: "#d4a52018", border: "1px solid #d4a52040", borderRadius: 4, fontFamily: "JetBrains Mono, monospace", fontSize: 10, color: "#d4a520", letterSpacing: "1px" }}>
+              ⚠ TIERS INVERTED — high confidence underperforming low
+            </div>
+          )}
+          {(() => {
+            const tiers = ["CONVICTION", "HIGH", "MEDIUM", "LOW"] as const;
+            const rows = tiers
+              .map((t) => ({ tier: t, b: snapshot.by_confidence?.[t] }))
+              .filter((r) => r.b && r.b.trades > 0);
+            if (rows.length === 0) {
+              return <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: "#666670" }}>No data yet</div>;
+            }
+            return (
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr>
+                    {["TIER", "N", "WIN RATE"].map((h) => (
+                      <th key={h} style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "2px", color: "#888", textAlign: "left", padding: "0 12px 8px 0", borderBottom: "1px solid #2a2a2e" }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map(({ tier, b }) => (
+                    <tr key={tier}>
+                      <td style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: "#e0e0e0", padding: "9px 12px 9px 0", borderBottom: "1px solid #2a2a2e40" }}>{tier}</td>
+                      <td style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: "#e0e0e0", padding: "9px 12px 9px 0", borderBottom: "1px solid #2a2a2e40" }}>{b!.trades}</td>
+                      <td style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: "#e0e0e0", padding: "9px 12px 9px 0", borderBottom: "1px solid #2a2a2e40" }}>{fmtPct(b!.win_rate * 100)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            );
+          })()}
+        </div>
+
+        {/* By Session */}
+        <div style={{ background: "#1a1a1e", border: "1px solid #2a2a2e", borderRadius: 6, padding: 20 }}>
+          <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "3px", color: "#d4a520", marginBottom: 14 }}>
+            BY SESSION
+          </div>
+          {(() => {
+            const entries = Object.entries(snapshot.by_session ?? {}).filter(([, b]) => b && b.trades > 0);
+            if (entries.length === 0) {
+              return <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: "#666670" }}>No data yet</div>;
+            }
+            return (
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr>
+                    {["SESSION", "N", "WIN RATE"].map((h) => (
+                      <th key={h} style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "2px", color: "#888", textAlign: "left", padding: "0 12px 8px 0", borderBottom: "1px solid #2a2a2e" }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {entries.map(([s, b]) => (
+                    <tr key={s}>
+                      <td style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: "#e0e0e0", padding: "9px 12px 9px 0", borderBottom: "1px solid #2a2a2e40" }}>{s.replace("_", " ")}</td>
+                      <td style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: "#e0e0e0", padding: "9px 12px 9px 0", borderBottom: "1px solid #2a2a2e40" }}>{b.trades}</td>
+                      <td style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: "#e0e0e0", padding: "9px 12px 9px 0", borderBottom: "1px solid #2a2a2e40" }}>{fmtPct(b.win_rate * 100)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            );
+          })()}
+        </div>
       </div>
 
       {/* Factor edge breakdown */}

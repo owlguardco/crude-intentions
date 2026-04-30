@@ -3,11 +3,12 @@
  *
  * GET /api/journal/observer
  *
- * Reads calibration:latest + calibration:history from KV and returns the
- * generateCalibrationNotes() output along with the snapshot it was derived from.
- * Read-only.
+ * Auth: x-api-key (INTERNAL_API_KEY).
  *
- * Auth: requires INTERNAL_API_KEY (x-api-key or Bearer header).
+ * Reads calibration:latest from KV and runs generateCalibrationNotes()
+ * against it. Returns:
+ *   { note: string[] }                    — notes derived from the snapshot
+ *   { note: null, reason: 'no_calibration_data' }  — KV empty, no snapshot yet
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -34,16 +35,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const [snapshot, history] = await Promise.all([
-    kv.get<CalibrationSnapshot>("calibration:latest"),
-    kv.get<CalibrationSnapshot[]>("calibration:history"),
-  ]);
+  const snapshot = await kv.get<CalibrationSnapshot>("calibration:latest");
+  if (!snapshot) {
+    return NextResponse.json({ note: null, reason: "no_calibration_data" });
+  }
 
-  const notes = snapshot ? generateCalibrationNotes(snapshot) : [];
-
-  return NextResponse.json({
-    snapshot: snapshot ?? null,
-    notes,
-    history_count: history?.length ?? 0,
-  });
+  const note = generateCalibrationNotes(snapshot);
+  return NextResponse.json({ note });
 }
