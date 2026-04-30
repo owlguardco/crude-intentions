@@ -9,6 +9,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { kv } from "@/lib/kv";
+import { safeEq } from "@/lib/auth/safe-compare";
 import {
   readContext,
   writeContext,
@@ -27,7 +28,7 @@ function isAuthorised(req: NextRequest): boolean {
   const header = req.headers.get("x-api-key") ?? req.headers.get("authorization");
   if (!header) return false;
   const token = header.startsWith("Bearer ") ? header.slice(7) : header;
-  return token === INTERNAL_API_KEY;
+  return safeEq(token, INTERNAL_API_KEY);
 }
 
 interface PatchIdeaBody {
@@ -84,7 +85,7 @@ export async function PATCH(
   } catch (err) {
     console.error("[idea PATCH]", err);
     return NextResponse.json(
-      { error: "Failed to update idea", detail: String(err) },
+      { error: "Failed to update idea" },
       { status: 500 }
     );
   }
@@ -115,7 +116,7 @@ export async function DELETE(
   } catch (err) {
     console.error("[idea DELETE]", err);
     return NextResponse.json(
-      { error: "Failed to delete idea", detail: String(err) },
+      { error: "Failed to delete idea" },
       { status: 500 }
     );
   }

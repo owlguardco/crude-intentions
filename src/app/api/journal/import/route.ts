@@ -19,6 +19,7 @@ import { z } from 'zod';
 import { JournalWriteSchema } from '@/lib/validation/journal-schema';
 import { writeJournalEntry } from '@/lib/journal/writer';
 import { closeTrade, type CloseStatus } from '@/lib/journal/close-trade';
+import { safeEq } from '@/lib/auth/safe-compare';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -36,7 +37,7 @@ function isAuthorised(req: NextRequest): boolean {
   const header = req.headers.get('x-api-key') ?? req.headers.get('authorization');
   if (!header) return false;
   const token = header.startsWith('Bearer ') ? header.slice(7) : header;
-  return token === INTERNAL_API_KEY;
+  return safeEq(token, INTERNAL_API_KEY);
 }
 
 function applyImportDefaults(raw: unknown): unknown {
@@ -97,8 +98,8 @@ export async function POST(req: NextRequest) {
       writtenId = result.id;
       imported++;
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Write failed';
-      errors.push({ index: i, message });
+      console.error('[journal/import] write failed at index', i, err);
+      errors.push({ index: i, message: 'Write failed' });
       continue;
     }
 
@@ -148,8 +149,8 @@ export async function POST(req: NextRequest) {
           });
         }
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Close threw';
-        errors.push({ index: i, message: `Imported but close failed: ${message}` });
+        console.error('[journal/import] close failed at index', i, err);
+        errors.push({ index: i, message: 'Imported but close failed' });
       }
     }
   }

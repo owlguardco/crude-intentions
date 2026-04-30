@@ -12,6 +12,7 @@
 import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { kv } from "@/lib/kv";
+import { safeEq } from "@/lib/auth/safe-compare";
 import {
   readContext,
   writeContext,
@@ -36,7 +37,7 @@ function isAuthorised(req: NextRequest): boolean {
   const header = req.headers.get("x-api-key") ?? req.headers.get("authorization");
   if (!header) return false;
   const token = header.startsWith("Bearer ") ? header.slice(7) : header;
-  return token === INTERNAL_API_KEY;
+  return safeEq(token, INTERNAL_API_KEY);
 }
 
 interface AddFvgBody {
@@ -124,7 +125,7 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error("[fvg POST]", err);
     return NextResponse.json(
-      { error: "Failed to add FVG", detail: String(err) },
+      { error: "Failed to add FVG" },
       { status: 500 }
     );
   }

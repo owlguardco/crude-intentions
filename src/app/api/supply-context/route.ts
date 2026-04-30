@@ -13,6 +13,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { kv } from '@/lib/kv';
+import { safeEq } from '@/lib/auth/safe-compare';
 import {
   readContext,
   writeContext,
@@ -156,7 +157,7 @@ function isAuthorised(req: NextRequest): boolean {
   const header = req.headers.get('x-api-key') ?? req.headers.get('authorization');
   if (!header) return false;
   const token = header.startsWith('Bearer ') ? header.slice(7) : header;
-  return token === INTERNAL_API_KEY;
+  return safeEq(token, INTERNAL_API_KEY);
 }
 
 async function fetchEia(url: string): Promise<number[] | null> {

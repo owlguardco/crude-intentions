@@ -16,6 +16,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { safeEq } from '@/lib/auth/safe-compare';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -27,7 +28,8 @@ export async function POST(req: NextRequest) {
   if (!INTERNAL_API_KEY) {
     return NextResponse.json({ error: 'INTERNAL_API_KEY not configured' }, { status: 500 });
   }
-  if (req.headers.get('x-api-key') !== INTERNAL_API_KEY) {
+  const auth = req.headers.get('x-api-key');
+  if (!auth || !safeEq(auth, INTERNAL_API_KEY)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   if (!CRON_SECRET) {

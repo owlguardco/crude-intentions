@@ -14,9 +14,21 @@
  */
 
 import { NextResponse } from 'next/server';
+import { kv } from '@/lib/kv';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+const KV_KEY = 'cl-price:latest';
+const CACHE_MAX_AGE_MS = 30 * 1000;
+
+interface CachedPrice {
+  price: number;
+  timestamp: number;
+  currency: string;
+  session_open: number | null;
+  cached_at: string;
+}
 
 interface YahooChartResponse {
   chart?: {
@@ -85,6 +97,25 @@ function findSessionOpen(
 }
 
 export async function GET() {
+  // Cache check — 30s TTL keeps the dashboard's 10s poll cadence cheap and
+  // shields Yahoo from per-tab fanout.
+  try {
+    const cached = await kv.get<CachedPrice>(KV_KEY);
+    if (cached?.cached_at) {
+      const age = Date.now() - Date.parse(cached.cached_at);
+      if (Number.isFinite(age) && age < CACHE_MAX_AGE_MS) {
+        return NextResponse.json({
+          price: cached.price,
+          timestamp: cached.timestamp,
+          currency: cached.currency,
+          session_open: cached.session_open,
+        });
+      }
+    }
+  } catch {
+    // fall through to fresh fetch
+  }
+
   const url = 'https://query1.finance.yahoo.com/v8/finance/chart/CL=F?interval=1m&range=1d';
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 10_000);
@@ -92,7 +123,7 @@ export async function GET() {
   try {
     const res = await fetch(url, {
       signal: ctrl.signal,
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; CrudeIntentions/1.8)' },
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; CrudeIntentions/1.9)' },
       cache: 'no-store',
     });
     if (!res.ok) {
@@ -113,15 +144,25 @@ export async function GET() {
         ? findSessionOpen(timestamps, opens)
         : null;
 
-    return NextResponse.json({
+    const payload: CachedPrice = {
       price,
       timestamp: meta?.regularMarketTime ?? Math.floor(Date.now() / 1000),
       currency: meta?.currency ?? 'USD',
       session_open,
+      cached_at: new Date().toISOString(),
+    };
+    try { await kv.set(KV_KEY, payload); } catch { /* swallow */ }
+
+    return NextResponse.json({
+      price: payload.price,
+      timestamp: payload.timestamp,
+      currency: payload.currency,
+      session_open: payload.session_open,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'fetch failed';
-    return NextResponse.json({ error: message }, { status: 502 });
+    console.error('[cl-price] upstream fetch failed:', message);
+    return NextResponse.json({ error: 'Upstream fetch failed' }, { status: 502 });
   } finally {
     clearTimeout(timer);
   }

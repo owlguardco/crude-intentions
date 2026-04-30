@@ -9,6 +9,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { kv } from "@/lib/kv";
+import { safeEq } from "@/lib/auth/safe-compare";
 import {
   readContext,
   writeContext,
@@ -27,7 +28,7 @@ function isAuthorised(req: NextRequest): boolean {
   const header = req.headers.get("x-api-key") ?? req.headers.get("authorization");
   if (!header) return false;
   const token = header.startsWith("Bearer ") ? header.slice(7) : header;
-  return token === INTERNAL_API_KEY;
+  return safeEq(token, INTERNAL_API_KEY);
 }
 
 interface PatchFvgBody {
@@ -79,7 +80,7 @@ export async function PATCH(
   } catch (err) {
     console.error("[fvg PATCH]", err);
     return NextResponse.json(
-      { error: "Failed to update FVG", detail: String(err) },
+      { error: "Failed to update FVG" },
       { status: 500 }
     );
   }
@@ -110,7 +111,7 @@ export async function DELETE(
   } catch (err) {
     console.error("[fvg DELETE]", err);
     return NextResponse.json(
-      { error: "Failed to delete FVG", detail: String(err) },
+      { error: "Failed to delete FVG" },
       { status: 500 }
     );
   }

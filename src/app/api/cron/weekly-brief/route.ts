@@ -14,6 +14,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { kv } from '@/lib/kv';
+import { safeEq } from '@/lib/auth/safe-compare';
 import {
   readContext,
   writeContext,
@@ -78,9 +79,9 @@ async function fetchPrice(symbol: string): Promise<number | null> {
 function isAuthorised(req: NextRequest): boolean {
   if (!CRON_SECRET) return false;
   const auth = req.headers.get('authorization');
-  if (auth && auth.startsWith('Bearer ') && auth.slice(7) === CRON_SECRET) return true;
+  if (auth && auth.startsWith('Bearer ') && safeEq(auth.slice(7), CRON_SECRET)) return true;
   const direct = req.headers.get('x-cron-secret');
-  if (direct === CRON_SECRET) return true;
+  if (direct && safeEq(direct, CRON_SECRET)) return true;
   return false;
 }
 

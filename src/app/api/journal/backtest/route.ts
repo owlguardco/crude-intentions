@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { kv } from '@/lib/kv';
 import type { CalibrationEntry } from '@/lib/journal/calibration';
 import { closeTrade } from '@/lib/journal/close-trade';
+import { safeEq } from '@/lib/auth/safe-compare';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -81,7 +82,7 @@ interface BacktestResult { signal_id: string; outcome: 'WIN' | 'LOSS' | 'OPEN' |
 
 export async function POST(req: NextRequest) {
   const auth = req.headers.get('x-api-key');
-  if (!INTERNAL_API_KEY || auth !== INTERNAL_API_KEY) {
+  if (!INTERNAL_API_KEY || !auth || !safeEq(auth, INTERNAL_API_KEY)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -115,12 +116,21 @@ export async function POST(req: NextRequest) {
     return true;
   }) as Eligible[];
 
+  // F-22: cap the per-request workload so a runaway eligible set can't
+  // wedge the function near Vercel's 300s ceiling. Each iteration sleeps
+  // 500ms between Yahoo fetches; 50 entries is ~25s of work, well inside.
+  const MAX_ELIGIBLE = 50;
+  const capped = eligible.slice(0, MAX_ELIGIBLE);
+  if (eligible.length > MAX_ELIGIBLE) {
+    console.warn('[journal/backtest] cap hit:', eligible.length, 'entries, running first 50');
+  }
+
   const results: BacktestResult[] = [];
   let resolved = 0;
   let skipped = 0;
 
-  for (let i = 0; i < eligible.length; i++) {
-    const entry = eligible[i];
+  for (let i = 0; i < capped.length; i++) {
+    const entry = capped[i];
     if (i > 0) await sleep(500);
 
     const tp1 = entry.tp1_price as number;
@@ -177,7 +187,7 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({
-    processed: eligible.length,
+    processed: capped.length,
     resolved,
     skipped,
     results,

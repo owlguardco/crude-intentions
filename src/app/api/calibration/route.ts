@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { kv } from "@/lib/kv";
 import type { CalibrationSnapshot } from "@/lib/journal/calibration";
+import { safeEq } from "@/lib/auth/safe-compare";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,7 +23,7 @@ function isAuthorised(req: NextRequest): boolean {
   const header = req.headers.get("x-api-key") ?? req.headers.get("authorization");
   if (!header) return false;
   const token = header.startsWith("Bearer ") ? header.slice(7) : header;
-  return token === INTERNAL_API_KEY;
+  return safeEq(token, INTERNAL_API_KEY);
 }
 
 export async function GET(req: NextRequest) {

@@ -17,6 +17,7 @@
 
 import { NextResponse } from 'next/server';
 import { kv } from '@/lib/kv';
+import { checkRateLimit, rateLimitHeaders } from '@/lib/rate-limit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -164,6 +165,11 @@ function emptyPulse(error?: string): StreetPulseResponse {
 }
 
 export async function GET() {
+  const rl = await checkRateLimit('street-pulse:read', 20, 60);
+  const rlHeaders = rateLimitHeaders(rl);
+  if (!rl.allowed) {
+    return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429, headers: rlHeaders });
+  }
   // Cache check
   try {
     const cached = await kv.get<CachedPulse>(KV_KEY);

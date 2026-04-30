@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { kv } from '@/lib/kv';
 import type { CalibrationEntry } from '@/lib/journal/calibration';
+import { safeEq } from '@/lib/auth/safe-compare';
+
+const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY;
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -33,7 +36,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const apiKey = req.headers.get('x-api-key');
-  if (!apiKey || apiKey !== process.env.INTERNAL_API_KEY) {
+  if (!INTERNAL_API_KEY || !apiKey || !safeEq(apiKey, INTERNAL_API_KEY)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
