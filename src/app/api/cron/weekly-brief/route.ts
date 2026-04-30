@@ -107,10 +107,19 @@ function normaliseLevels(arr: unknown): number[] {
 }
 
 export async function GET(req: NextRequest) {
+  // Public read path — no Bearer / x-cron-secret means dashboard polling.
+  // Returns whatever the last cron run wrote, or null if never run.
   if (!isAuthorised(req)) {
-    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+    try {
+      const ctx = await readContext(kv);
+      return NextResponse.json({ weekly_bias: ctx.weekly_bias ?? null });
+    } catch (err) {
+      console.error('[WEEKLY-BRIEF] read failed', err);
+      return NextResponse.json({ weekly_bias: null });
+    }
   }
 
+  // Authenticated GET = the Vercel cron firing → run the brief and persist.
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     return NextResponse.json({ error: 'ANTHROPIC_API_KEY missing' }, { status: 500 });

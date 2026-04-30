@@ -1,10 +1,141 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import logData from "@/data/safety_check_log.json";
 import weeklyBias from "@/data/weekly_bias.json";
 import MarketMemoryWidget from "@/components/MarketMemoryWidget";
 import StreetPulseWidget from "@/components/StreetPulseWidget";
+
+interface WeeklyBriefData {
+  direction: "LONG" | "SHORT" | "NEUTRAL";
+  strength: "STRONG" | "MODERATE" | "WEAK";
+  rationale: string;
+  invalidation: string | null;
+  key_levels: { resistance: number[]; support: number[] };
+  macro_inputs: { dxy: number | null; vix: number | null; ovx: number | null; xle: number | null };
+  generated_at: string;
+}
+
+function fmtBriefTime(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString("en-US", {
+      month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+      timeZone: "America/New_York",
+    }) + " ET";
+  } catch { return iso; }
+}
+
+function WeeklyBriefWidget() {
+  const [brief, setBrief] = useState<WeeklyBriefData | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetch("/api/cron/weekly-brief", { cache: "no-store" });
+        if (cancelled || !res.ok) { setLoaded(true); return; }
+        const json = await res.json();
+        if (json && json.weekly_bias) setBrief(json.weekly_bias as WeeklyBriefData);
+        setLoaded(true);
+      } catch {
+        if (!cancelled) setLoaded(true);
+      }
+    };
+    load();
+    const t = setInterval(load, 5 * 60_000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, []);
+
+  // Empty state — borderless one-liner before first brief lands
+  if (loaded && !brief) {
+    return (
+      <div style={{ padding: "8px 0", fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "3px", color: "#666670" }}>
+        WEEKLY BRIEF · PENDING — runs Sunday 20:00 UTC
+      </div>
+    );
+  }
+  if (!brief) return null;
+
+  const dirColor = brief.direction === "LONG" ? "#22c55e" : brief.direction === "SHORT" ? "#ef4444" : "#888";
+  const macroChip = (label: string, value: number | null, fmt = (v: number) => v.toFixed(1)) => {
+    const display = value == null ? "—" : fmt(value);
+    return (
+      <span style={{
+        fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "1px",
+        padding: "3px 8px", borderRadius: 3,
+        color: value == null ? "#444450" : "#888",
+        background: "#11111580", border: "1px solid #2a2a2e",
+      }}>
+        {label} {display}
+      </span>
+    );
+  };
+
+  return (
+    <div style={{ background: "#1a1a1e", border: "1px solid #2a2a2e", borderRadius: 6, padding: 20 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+        <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "3px", color: "#d4a520" }}>
+          WEEKLY BRIEF
+        </div>
+        <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "1px", color: "#666670" }}>
+          {fmtBriefTime(brief.generated_at)}
+        </div>
+      </div>
+
+      {/* Direction + strength */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+        <span style={{
+          fontFamily: "JetBrains Mono, monospace", fontSize: 12, fontWeight: 700, letterSpacing: "2px",
+          padding: "3px 10px", borderRadius: 3, color: dirColor,
+          background: `${dirColor}18`, border: `1px solid ${dirColor}40`,
+        }}>{brief.direction}</span>
+        <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, letterSpacing: "1px", color: "#888" }}>
+          {brief.strength}
+        </span>
+      </div>
+
+      {/* Rationale */}
+      {brief.rationale && (
+        <div style={{ fontFamily: "Inter, sans-serif", fontSize: 12, color: "#888", lineHeight: 1.55, marginBottom: 12 }}>
+          {brief.rationale}
+        </div>
+      )}
+
+      {/* Invalidation */}
+      {brief.invalidation && (
+        <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "1px", color: "#ef4444", marginBottom: 12 }}>
+          ✗ INVALIDATED IF: <span style={{ fontFamily: "Inter, sans-serif", letterSpacing: 0 }}>{brief.invalidation}</span>
+        </div>
+      )}
+
+      {/* Key levels */}
+      {(brief.key_levels.resistance.length > 0 || brief.key_levels.support.length > 0) && (
+        <div style={{ display: "flex", gap: 16, marginBottom: 12, flexWrap: "wrap" }}>
+          {brief.key_levels.resistance.length > 0 && (
+            <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, color: "#ef4444", letterSpacing: "1px" }}>
+              RESISTANCE: <span style={{ color: "#888" }}>{brief.key_levels.resistance.join(", ")}</span>
+            </span>
+          )}
+          {brief.key_levels.support.length > 0 && (
+            <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, color: "#22c55e", letterSpacing: "1px" }}>
+              SUPPORT: <span style={{ color: "#888" }}>{brief.key_levels.support.join(", ")}</span>
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Macro inputs */}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {macroChip("DXY", brief.macro_inputs.dxy)}
+        {macroChip("VIX", brief.macro_inputs.vix)}
+        {macroChip("OVX", brief.macro_inputs.ovx)}
+        {macroChip("XLE", brief.macro_inputs.xle, (v) => v.toFixed(2))}
+      </div>
+    </div>
+  );
+}
 
 const CHECKLIST_ITEMS = [
   "EMA Stack Aligned",
@@ -137,6 +268,9 @@ export default function DashboardPage() {
           </table>
         </div>
       </div>
+
+      {/* Weekly Brief — Sunday cron output, full-width */}
+      <WeeklyBriefWidget />
 
       {/* Street Pulse — sentiment readout below the market-memory row */}
       <StreetPulseWidget />
