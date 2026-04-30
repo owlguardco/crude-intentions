@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import Anthropic from '@anthropic-ai/sdk';
 import { writeJournalEntry } from '@/lib/journal/writer';
 import { scoreToConfidence } from '@/lib/alfred/confidence';
@@ -9,7 +10,7 @@ import {
 import { AdversarialScanSchema } from '@/lib/validation/journal-schema';
 import { kv } from '@/lib/kv';
 import { readContext, buildMarketMemoryPromptSection } from '@/lib/market-memory/context';
-import { computeEntryAlignment, type EmaStack } from '@/lib/mtf/consensus';
+import { computeEntryAlignment } from '@/lib/mtf/consensus';
 import { checkRateLimit, rateLimitHeaders } from '@/lib/rate-limit';
 import { checkReplay } from '@/lib/replay-protect';
 
@@ -36,17 +37,33 @@ Check: trend alignment, FVG quality, RSI context, macro timing, OVX regime, R:R 
 Verdict: PASS, CONDITIONAL_PASS, or SKIP.
 Output ONLY valid JSON: {"verdict":"PASS"|"CONDITIONAL_PASS"|"SKIP","concerns":["string"],"override_note":null}`;
 
-interface WebhookSignal {
-  direction: 'LONG' | 'SHORT'; price: number; ema20: number; ema50: number; ema200: number;
-  rsi: number; macd?: number; vwap?: number; ovx: number; dxy: string;
-  fvg_direction: string; fvg_top: number; fvg_bottom: number; fvg_age?: number;
-  session: 'NY_OPEN' | 'NY_AFTERNOON' | 'LONDON' | 'OVERLAP' | 'ASIA' | 'OFF_HOURS';
-  weekly_bias?: string; htf_resistance?: number; htf_support?: number; eia_active: boolean;
-  stop_loss?: number;
-  htf_ema_stack?: EmaStack;
-  setup_ema_stack?: EmaStack;
-  signal_id?: string;
-}
+const WebhookSignalSchema = z.object({
+  direction: z.enum(['LONG', 'SHORT']),
+  price: z.number().finite().min(10).max(500),
+  ema20: z.number().finite().min(10).max(500),
+  ema50: z.number().finite().min(10).max(500),
+  ema200: z.number().finite().min(10).max(500),
+  rsi: z.number().finite().min(0).max(100),
+  macd: z.number().finite().min(-100).max(100).optional(),
+  vwap: z.number().finite().min(10).max(500).optional(),
+  ovx: z.number().finite().min(0).max(300),
+  dxy: z.enum(['rising', 'falling', 'flat', 'neutral']),
+  fvg_direction: z.enum(['bullish', 'bearish', 'none']),
+  fvg_top: z.number().finite().min(10).max(500),
+  fvg_bottom: z.number().finite().min(10).max(500),
+  fvg_age: z.number().int().min(0).max(1000).optional(),
+  session: z.enum(['NY_OPEN', 'NY_AFTERNOON', 'LONDON', 'OVERLAP', 'ASIA', 'OFF_HOURS']),
+  weekly_bias: z.enum(['LONG', 'SHORT', 'NEUTRAL']).optional(),
+  htf_resistance: z.number().finite().min(10).max(500).optional(),
+  htf_support: z.number().finite().min(10).max(500).optional(),
+  eia_active: z.boolean(),
+  stop_loss: z.number().finite().min(10).max(500).optional(),
+  htf_ema_stack: z.enum(['BULLISH', 'BEARISH', 'MIXED']).optional(),
+  setup_ema_stack: z.enum(['BULLISH', 'BEARISH', 'MIXED']).optional(),
+  signal_id: z.string().min(1).max(64).optional(),
+}).strict();
+
+type WebhookSignal = z.infer<typeof WebhookSignalSchema>;
 
 function computeTradeLevels(direction: 'LONG' | 'SHORT' | 'NO TRADE', entry: number | null, stop: number | null | undefined) {
   if (entry == null || stop == null || direction === 'NO TRADE') {
@@ -161,13 +178,18 @@ export async function POST(req: NextRequest) {
   if (!INTERNAL_API_KEY || auth !== INTERNAL_API_KEY) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: rlHeaders });
   }
-  let signal: WebhookSignal;
-  try { signal = await req.json(); } catch {
+  let rawBody: unknown;
+  try { rawBody = await req.json(); } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400, headers: rlHeaders });
   }
-  if (!signal.direction || !signal.price || !signal.session) {
-    return NextResponse.json({ error: 'Missing required fields' }, { status: 400, headers: rlHeaders });
+  const parsed = WebhookSignalSchema.safeParse(rawBody);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: 'Invalid signal', details: parsed.error.flatten() },
+      { status: 400, headers: rlHeaders },
+    );
   }
+  const signal: WebhookSignal = parsed.data;
 
   // Replay protection — caller-supplied signal_id is preferred; otherwise
   // build a deterministic 30-second-bucket key from the signal shape so a

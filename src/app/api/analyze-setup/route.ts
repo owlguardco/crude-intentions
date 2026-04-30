@@ -18,6 +18,7 @@ import { computeEntryAlignment } from '@/lib/mtf/consensus';
 import { checkRateLimit, rateLimitHeaders } from '@/lib/rate-limit';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY;
 
 // ─── Input validation schema (SECURITY.md Phase 1 clearance) ─────────────────
 const SetupInputSchema = z.object({
@@ -119,6 +120,10 @@ export async function POST(req: NextRequest) {
       { error: 'Rate limit exceeded — 30 requests per minute maximum' },
       { status: 429, headers: rlHeaders },
     );
+  }
+  const auth = req.headers.get('x-api-key');
+  if (!INTERNAL_API_KEY || auth !== INTERNAL_API_KEY) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: rlHeaders });
   }
   try {
     const contentLength = req.headers.get('content-length');

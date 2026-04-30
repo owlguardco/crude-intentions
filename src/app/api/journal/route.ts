@@ -6,6 +6,12 @@ import { kv } from '@/lib/kv';
 
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY;
 
+function requireAuth(req: NextRequest): NextResponse | null {
+  if (!INTERNAL_API_KEY) return NextResponse.json({ error: 'INTERNAL_API_KEY not configured' }, { status: 500 });
+  if (req.headers.get('x-api-key') !== INTERNAL_API_KEY) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  return null;
+}
+
 // ─── GET /api/journal ─────────────────────────────────────────────────────────
 // Returns full journal: decisions array + summary stats.
 export async function GET() {
@@ -26,6 +32,8 @@ export async function GET() {
 // Appends a new decision entry. Validates with Zod before writing.
 // Returns the written entry with its ID and integrity hash.
 export async function POST(req: NextRequest) {
+  const unauth = requireAuth(req);
+  if (unauth) return unauth;
   try {
     // ── Request size guard (10KB max) ──────────────────────────────────────
     const contentLength = req.headers.get('content-length');
@@ -67,6 +75,8 @@ export async function POST(req: NextRequest) {
 // Updates the outcome of an existing entry after trade closes.
 // Body: { id: string, outcome: OutcomeUpdateInput }
 export async function PATCH(req: NextRequest) {
+  const unauth = requireAuth(req);
+  if (unauth) return unauth;
   try {
     const body = await req.json();
     const { id, outcome } = body;
