@@ -129,21 +129,42 @@ const tdStyle: React.CSSProperties = {
 export default function CalibrationPage() {
   const [snapshot, setSnapshot] = useState<CalibrationSnapshot | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = async () => {
     try {
       const apiKey = process.env.NEXT_PUBLIC_INTERNAL_API_KEY ?? "";
+      if (!apiKey) {
+        const msg = "NEXT_PUBLIC_INTERNAL_API_KEY not set in browser bundle — set it in Vercel env";
+        console.error("[calibration page]", msg);
+        setLoadError(msg);
+        setLoaded(true);
+        return;
+      }
       const res = await fetch("/api/calibration", {
         headers: { "x-api-key": apiKey },
       });
       if (!res.ok) {
+        const detail = `HTTP ${res.status} ${res.statusText} from /api/calibration`;
+        console.error("[calibration page]", detail, await res.text().catch(() => ""));
+        setLoadError(detail);
         setLoaded(true);
         return;
       }
       const json = await res.json();
-      setSnapshot(json.snapshot ?? null);
+      if (!json.snapshot) {
+        console.warn("[calibration page] /api/calibration returned 200 but snapshot is null");
+        setLoadError("Snapshot empty — POST /api/journal/calibration-seed to populate KV");
+        setSnapshot(null);
+      } else {
+        setLoadError(null);
+        setSnapshot(json.snapshot);
+      }
       setLoaded(true);
-    } catch {
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "fetch failed";
+      console.error("[calibration page] fetch threw:", msg);
+      setLoadError(msg);
       setLoaded(true);
     }
   };
@@ -161,6 +182,8 @@ export default function CalibrationPage() {
       <div
         style={{
           display: "flex",
+          flexDirection: "column",
+          gap: 10,
           alignItems: "center",
           justifyContent: "center",
           minHeight: "60vh",
@@ -176,6 +199,24 @@ export default function CalibrationPage() {
         >
           NO CALIBRATION DATA — log and close trades to begin
         </div>
+        {loadError && (
+          <div
+            style={{
+              fontFamily: FONT_MONO,
+              fontSize: 9,
+              letterSpacing: "1px",
+              color: "#ef4444",
+              maxWidth: 540,
+              textAlign: "center",
+              padding: "6px 10px",
+              border: "1px solid #ef444440",
+              borderRadius: 4,
+              background: "#ef444410",
+            }}
+          >
+            {loadError}
+          </div>
+        )}
       </div>
     );
   }
