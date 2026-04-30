@@ -88,9 +88,9 @@ export async function DELETE(req: NextRequest) {
   }
 
   const filter = req.nextUrl.searchParams.get('filter');
-  if (filter !== 'historical') {
+  if (filter !== 'historical' && filter !== 'all') {
     return NextResponse.json(
-      { error: "Unsupported filter — only ?filter=historical is recognized" },
+      { error: "Unsupported filter — only ?filter=historical or ?filter=all is recognized" },
       { status: 400 },
     );
   }
@@ -98,9 +98,10 @@ export async function DELETE(req: NextRequest) {
   try {
     const entries = (await kv.get<JournalEntry[]>('journal:entries')) ?? [];
     const before = entries.length;
-    const remainingEntries = entries.filter(
-      (e) => !(e.historical === true && e.backtest_source === true),
-    );
+    const remainingEntries =
+      filter === 'all'
+        ? []
+        : entries.filter((e) => !(e.historical === true && e.backtest_source === true));
     const deleted = before - remainingEntries.length;
 
     await kv.set('journal:entries', remainingEntries);
