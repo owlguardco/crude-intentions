@@ -6,11 +6,11 @@
  * Server-side fetch for ^OVX (CBOE Crude Oil ETF Volatility Index).
  *
  * Primary source: FRED series OVXCLS (api.stlouisfed.org), keyed by
- * EIA_API_KEY env var. Cached in KV at `ovx:latest` for 5 minutes —
+ * FRED_API_KEY env var. Cached in KV at `ovx:latest` for 5 minutes —
  * OVX is slow-moving and there is no point hammering the upstream
  * from every client tab.
  *
- * Fallback: Yahoo Finance ^OVX chart endpoint, used when EIA_API_KEY
+ * Fallback: Yahoo Finance ^OVX chart endpoint, used when FRED_API_KEY
  * is not set or the FRED call fails. Keeps the dashboard alive even
  * when the primary feed is down.
  *
@@ -124,7 +124,7 @@ export async function GET() {
     // fall through to fresh fetch
   }
 
-  const fredKey = process.env.EIA_API_KEY;
+  const fredKey = process.env.FRED_API_KEY;
   const payload: CachedOvx | null =
     (fredKey ? await fetchFromFred(fredKey) : null) ?? (await fetchFromYahoo());
 
