@@ -11,6 +11,7 @@ import { kv } from '@/lib/kv';
 import { readContext, buildMarketMemoryPromptSection } from '@/lib/market-memory/context';
 import { computeEntryAlignment, type EmaStack } from '@/lib/mtf/consensus';
 import { checkRateLimit, rateLimitHeaders } from '@/lib/rate-limit';
+import { checkReplay } from '@/lib/replay-protect';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY;
@@ -44,6 +45,7 @@ interface WebhookSignal {
   stop_loss?: number;
   htf_ema_stack?: EmaStack;
   setup_ema_stack?: EmaStack;
+  signal_id?: string;
 }
 
 function computeTradeLevels(direction: 'LONG' | 'SHORT' | 'NO TRADE', entry: number | null, stop: number | null | undefined) {
@@ -166,6 +168,21 @@ export async function POST(req: NextRequest) {
   if (!signal.direction || !signal.price || !signal.session) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400, headers: rlHeaders });
   }
+
+  // Replay protection — caller-supplied signal_id is preferred; otherwise
+  // build a deterministic 30-second-bucket key from the signal shape so a
+  // chatty source can't accidentally fire the same setup twice.
+  const replayKey =
+    signal.signal_id ??
+    `${signal.direction}:${signal.price}:${signal.session}:${Math.floor(Date.now() / 1000 / 30)}`;
+  const replay = await checkReplay(replayKey);
+  if (replay.seen) {
+    return NextResponse.json(
+      { error: 'Duplicate signal — already processed' },
+      { status: 409, headers: rlHeaders },
+    );
+  }
+
   const receivedAt = new Date().toISOString();
   try {
     let alfred: AlfredResult;

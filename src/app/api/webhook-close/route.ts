@@ -5,6 +5,7 @@ import { kv } from '@/lib/kv';
 import type { CalibrationEntry } from '@/lib/journal/calibration';
 import { closeTrade, type CloseStatus } from '@/lib/journal/close-trade';
 import { checkRateLimit, rateLimitHeaders } from '@/lib/rate-limit';
+import { checkReplay } from '@/lib/replay-protect';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -87,6 +88,14 @@ export async function POST(req: NextRequest) {
 
   const { signal_id, close_price, close_reason } = parsed.data;
   let { ticks_pnl } = parsed.data;
+
+  // Replay protection — early exit before the journal lookup. Same 409
+  // shape the route already returns when an entry's status != OPEN, so
+  // legitimate retries see consistent behavior.
+  const replay = await checkReplay(`close:${signal_id}`);
+  if (replay.seen) {
+    return NextResponse.json({ error: 'Already closed' }, { status: 409, headers: rlHeaders });
+  }
 
   const entries = (await kv.get<CalibrationEntry[]>('journal:entries')) ?? [];
   const entry = entries.find((e) => e.id === signal_id);
