@@ -99,6 +99,8 @@ export default function JournalPage() {
   const [calLoaded, setCalLoaded] = useState(false);
   const [postmortemRunning, setPostmortemRunning] = useState<string | null>(null);
   const [postmortemError, setPostmortemError] = useState<string | null>(null);
+  const [noTradeOpen, setNoTradeOpen] = useState(false);
+  const [noTradeToast, setNoTradeToast] = useState<string | null>(null);
 
   // Import modal state
   const [importOpen, setImportOpen] = useState(false);
@@ -398,6 +400,27 @@ export default function JournalPage() {
     await loadJournal();
   }
 
+  async function submitNoTrade(payload: {
+    date: string;
+    session: "NY_OPEN" | "NY_AFTERNOON" | "LONDON" | "OVERLAP" | "ASIA" | "OFF_HOURS";
+    blockers: string[];
+    notes?: string;
+    conditions_snapshot: Record<string, unknown>;
+  }) {
+    const apiKey = process.env.NEXT_PUBLIC_INTERNAL_API_KEY ?? "";
+    const res = await fetch("/api/journal/no-trade", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": apiKey },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({} as { error?: string }));
+      throw new Error(j?.error ?? `Save failed (HTTP ${res.status})`);
+    }
+    const j = await res.json();
+    return j.entry as { id: string };
+  }
+
   async function runPostmortem(id: string) {
     if (postmortemRunning) return;
     setPostmortemRunning(id);
@@ -487,6 +510,15 @@ export default function JournalPage() {
           openImport={() => setImportOpen(true)}
           runPostmortem={runPostmortem}
           postmortemRunning={postmortemRunning}
+          openNoTrade={() => setNoTradeOpen(true)}
+          hasEntriesToday={(() => {
+            const today = new Date().toISOString().slice(0, 10);
+            return decisions.some((d: any) => {
+              const ts = typeof d.timestamp === "string" ? d.timestamp.slice(0, 10) : "";
+              const dateField = typeof d.date === "string" ? d.date : "";
+              return ts === today || dateField === today;
+            });
+          })()}
         />
       )}
     </div>
@@ -497,6 +529,29 @@ export default function JournalPage() {
         onClose={() => setOpenOutcomeModal(null)}
         onSave={handleSaveOutcome}
       />
+    )}
+    {noTradeOpen && (
+      <LogNoTradeModal
+        onClose={() => setNoTradeOpen(false)}
+        onSave={async (payload) => {
+          try {
+            const e = await submitNoTrade(payload);
+            setNoTradeToast(`✓ Logged ${e.id}`);
+            setNoTradeOpen(false);
+            await loadJournal();
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : "Save failed";
+            setNoTradeToast(`✗ ${msg}`);
+          } finally {
+            setTimeout(() => setNoTradeToast(null), 4000);
+          }
+        }}
+      />
+    )}
+    {noTradeToast && (
+      <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 1000, padding: "10px 16px", background: "#1a1a1e", border: `1px solid ${noTradeToast.startsWith("✓") ? "#22c55e" : "#ef4444"}`, borderRadius: 4, fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: "#e0e0e0", letterSpacing: "1px", boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
+        {noTradeToast}
+      </div>
     )}
     {backtestToast && (
       <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 1000, padding: "10px 16px", background: "#1a1a1e", border: "1px solid #d4a520", borderRadius: 4, fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: "#e0e0e0", letterSpacing: "1px", boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
@@ -753,13 +808,15 @@ interface JournalViewProps {
   openImport: () => void;
   runPostmortem: (id: string) => Promise<void>;
   postmortemRunning: string | null;
+  openNoTrade: () => void;
+  hasEntriesToday: boolean;
 }
 
 function JournalView({
   filtered, filter, setFilter, live, total, taken, blocked, winRate, avgScore,
   expanded, setExpanded, expandedPostmortem, setExpandedPostmortem,
   setOpenOutcomeModal, backtesting, backtestableCount, runBacktest, openImport,
-  runPostmortem, postmortemRunning,
+  runPostmortem, postmortemRunning, openNoTrade, hasEntriesToday,
 }: JournalViewProps) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -831,6 +888,17 @@ function JournalView({
                 fontSize: 9, letterSpacing: "2px", color: "#d4a520",
               }}
             >IMPORT</button>
+            {!hasEntriesToday && (
+              <button
+                onClick={openNoTrade}
+                title="Log a NO TRADE entry for today's session"
+                style={{
+                  padding: "6px 14px", background: "transparent", border: "1px solid #888",
+                  borderRadius: 4, cursor: "pointer", fontFamily: "JetBrains Mono, monospace",
+                  fontSize: 9, letterSpacing: "2px", color: "#888",
+                }}
+              >LOG NO TRADE SESSION</button>
+            )}
             <button style={{
               padding: "6px 14px", background: "transparent", border: "1px solid #2a2a2e",
               borderRadius: 4, cursor: "pointer", fontFamily: "JetBrains Mono, monospace",
@@ -850,6 +918,32 @@ function JournalView({
           <tbody>
             {filtered.map((d: any) => (
               <>
+                {d.type === "no_trade" ? (
+                  <tr key={d.id} style={{ background: "#88888808" }}>
+                    <td style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, color: "#444450", padding: "11px 12px 11px 0", borderBottom: "1px solid #2a2a2e20" }}>{d.id}</td>
+                    <td style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, color: "#888", padding: "11px 12px 11px 0", borderBottom: "1px solid #2a2a2e20" }}>
+                      {new Date(d.timestamp).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                    </td>
+                    <td style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, color: "#888", padding: "11px 12px 11px 0", borderBottom: "1px solid #2a2a2e20" }}>{d.session?.replace("_", " ")}</td>
+                    <td style={{ padding: "11px 12px 11px 0", borderBottom: "1px solid #2a2a2e20" }}>
+                      <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "1px", padding: "3px 7px", borderRadius: 3, color: "#888", background: "#88888818", border: "1px solid #88888840" }}>NO TRADE</span>
+                    </td>
+                    <td colSpan={7} style={{ padding: "11px 0", borderBottom: "1px solid #2a2a2e20" }}>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                        {(Array.isArray(d.blockers) ? d.blockers : []).map((b: string, i: number) => (
+                          <span key={i} style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, color: "#888", padding: "2px 6px", borderRadius: 3, background: "#2a2a2e60", border: "1px solid #2a2a2e" }}>
+                            {b}
+                          </span>
+                        ))}
+                        {d.notes && (
+                          <span style={{ fontFamily: "Inter, sans-serif", fontSize: 11, fontStyle: "italic", color: "#666670", marginLeft: 8 }}>
+                            “{d.notes}”
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
                 <tr
                   key={d.id}
                   onClick={() => setExpanded(expanded === d.id ? null : d.id)}
@@ -911,6 +1005,7 @@ function JournalView({
                     </div>
                   </td>
                 </tr>
+                )}
 
                 {/* Post-mortem row */}
                 {expandedPostmortem === d.id && d.postmortem && (
@@ -1323,6 +1418,170 @@ function CalibrationPanel({ snapshot, notes, loaded }: CalibrationPanelProps) {
             ))}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+const NO_TRADE_BLOCKERS = [
+  "FVG zone not set",
+  "Price outside FVG zone",
+  "15m EMA stack mixed",
+  "4H EMA stack mixed",
+  "RSI not in reset zone",
+  "No trigger candle",
+  "Outside session window",
+  "EIA window active",
+  "OVX too high",
+  "Weekly bias opposing",
+  "System not wired (use for today — pipeline issues)",
+  "Market conditions — no clean setup",
+] as const;
+
+const NO_TRADE_SESSIONS = [
+  "NY_OPEN", "NY_AFTERNOON", "LONDON", "OVERLAP", "ASIA", "OFF_HOURS",
+] as const;
+
+type NoTradeSession = typeof NO_TRADE_SESSIONS[number];
+
+interface LogNoTradeModalProps {
+  onClose: () => void;
+  onSave: (payload: {
+    date: string;
+    session: NoTradeSession;
+    blockers: string[];
+    notes?: string;
+    conditions_snapshot: Record<string, unknown>;
+  }) => Promise<void>;
+}
+
+function LogNoTradeModal({ onClose, onSave }: LogNoTradeModalProps) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [date, setDate] = useState(today);
+  const [session, setSession] = useState<NoTradeSession>("NY_OPEN");
+  const [checked, setChecked] = useState<Record<string, boolean>>({});
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const blockers = Object.entries(checked)
+    .filter(([, v]) => v)
+    .map(([k]) => k);
+  const canSave = blockers.length > 0 && !saving;
+
+  async function handleSave() {
+    if (!canSave) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await onSave({
+        date,
+        session,
+        blockers,
+        notes: notes.trim() || undefined,
+        conditions_snapshot: { logged_at: new Date().toISOString() },
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Save failed");
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)",
+        zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center",
+      }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div style={{ background: "#1a1a1e", border: "1px solid #2a2a2e", borderRadius: 6, width: 520, maxHeight: "80vh", overflow: "auto", padding: 24 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, letterSpacing: "3px", color: "#d4a520" }}>
+            LOG NO TRADE SESSION
+          </div>
+          <button
+            onClick={onClose}
+            style={{ background: "transparent", border: "none", color: "#666670", fontSize: 18, cursor: "pointer" }}
+          >×</button>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+          <div>
+            <label style={{ display: "block", fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "2px", color: "#666670", marginBottom: 6 }}>DATE</label>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              style={{ width: "100%", padding: "8px 10px", background: "#0d0d10", border: "1px solid #2a2a2e", borderRadius: 4, color: "#e0e0e0", fontFamily: "JetBrains Mono, monospace", fontSize: 11 }}
+            />
+          </div>
+          <div>
+            <label style={{ display: "block", fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "2px", color: "#666670", marginBottom: 6 }}>SESSION</label>
+            <select
+              value={session}
+              onChange={(e) => setSession(e.target.value as NoTradeSession)}
+              style={{ width: "100%", padding: "8px 10px", background: "#0d0d10", border: "1px solid #2a2a2e", borderRadius: 4, color: "#e0e0e0", fontFamily: "JetBrains Mono, monospace", fontSize: 11 }}
+            >
+              {NO_TRADE_SESSIONS.map((s) => (
+                <option key={s} value={s}>{s.replace("_", " ")}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "2px", color: "#666670", marginBottom: 10 }}>BLOCKERS</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 16 }}>
+          {NO_TRADE_BLOCKERS.map((b) => (
+            <label key={b} style={{ display: "flex", alignItems: "center", gap: 10, fontFamily: "Inter, sans-serif", fontSize: 12, color: "#e0e0e0", cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={!!checked[b]}
+                onChange={(e) => setChecked({ ...checked, [b]: e.target.checked })}
+                style={{ accentColor: "#d4a520", cursor: "pointer" }}
+              />
+              {b}
+            </label>
+          ))}
+        </div>
+
+        <div>
+          <label style={{ display: "block", fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "2px", color: "#666670", marginBottom: 6 }}>NOTES (OPTIONAL)</label>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={3}
+            placeholder="Free-text observations about today's session"
+            style={{ width: "100%", padding: "8px 10px", background: "#0d0d10", border: "1px solid #2a2a2e", borderRadius: 4, color: "#e0e0e0", fontFamily: "Inter, sans-serif", fontSize: 12, resize: "vertical" }}
+          />
+        </div>
+
+        {error && (
+          <div style={{ marginTop: 12, padding: "8px 10px", background: "#ef444418", border: "1px solid #ef444440", borderRadius: 4, fontFamily: "JetBrains Mono, monospace", fontSize: 10, color: "#ef4444" }}>
+            {error}
+          </div>
+        )}
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 18 }}>
+          <button
+            onClick={onClose}
+            disabled={saving}
+            style={{ padding: "9px 16px", background: "transparent", border: "1px solid #2a2a2e", borderRadius: 4, fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "2px", color: "#888", cursor: saving ? "not-allowed" : "pointer" }}
+          >CANCEL</button>
+          <button
+            onClick={handleSave}
+            disabled={!canSave}
+            style={{
+              padding: "9px 16px",
+              background: canSave ? "#d4a520" : "#444450",
+              border: "none", borderRadius: 4,
+              fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "2px",
+              color: canSave ? "#0d0d0f" : "#666670",
+              fontWeight: 700,
+              cursor: canSave ? "pointer" : "not-allowed",
+            }}
+          >{saving ? "SAVING..." : "SUBMIT →"}</button>
+        </div>
       </div>
     </div>
   );
