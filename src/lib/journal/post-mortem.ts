@@ -50,9 +50,27 @@ export function firePostMortem(entry: CalibrationEntry): void {
     try {
       const apiKey = process.env.ANTHROPIC_API_KEY;
       const internalKey = process.env.INTERNAL_API_KEY;
-      const baseUrl = process.env.VERCEL_APP_URL ?? 'http://localhost:3000';
-      if (!apiKey || !internalKey) {
-        console.error('[POSTMORTEM] missing ANTHROPIC_API_KEY or INTERNAL_API_KEY');
+      const baseUrl = process.env.VERCEL_APP_URL;
+
+      // Explicit per-env-var guards so a missing config produces a
+      // specific Vercel log line instead of a swallowed network error
+      // against `undefined/api/...`.
+      if (!baseUrl) {
+        console.error(
+          `[POSTMORTEM] VERCEL_APP_URL not set — skipping post-mortem for ${entry.id}`,
+        );
+        return;
+      }
+      if (!internalKey) {
+        console.error(
+          `[POSTMORTEM] INTERNAL_API_KEY not set — skipping post-mortem for ${entry.id}`,
+        );
+        return;
+      }
+      if (!apiKey) {
+        console.error(
+          `[POSTMORTEM] ANTHROPIC_API_KEY not set — skipping post-mortem for ${entry.id}`,
+        );
         return;
       }
 
