@@ -31,6 +31,8 @@ const FACTOR_LABELS: Record<FactorKey, string> = {
   candle_confirmation: "Candle Conf",
   volume_profile: "Vol Profile",
   no_eia_window: "No EIA",
+  overnight_range_position: "Overnight Rng",
+  ovx_regime: "OVX Regime",
 };
 
 const TIER_ORDER = ["HIGH", "MEDIUM", "LOW"];

@@ -42,7 +42,9 @@ export type FactorKey =
   | 'market_bias'
   | 'candle_confirmation'
   | 'volume_profile'
-  | 'no_eia_window';
+  | 'no_eia_window'
+  | 'overnight_range_position'
+  | 'ovx_regime';
 
 export const FACTOR_KEYS: FactorKey[] = [
   'ema_stack_aligned',
@@ -53,6 +55,8 @@ export const FACTOR_KEYS: FactorKey[] = [
   'candle_confirmation',
   'volume_profile',
   'no_eia_window',
+  'overnight_range_position',
+  'ovx_regime',
 ];
 
 export interface FactorStats {

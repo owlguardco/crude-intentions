@@ -89,22 +89,29 @@ const SESSION_MAP: Record<string, string> = {
   "Off-hours": "OFF_HOURS",
 };
 
+type ChecklistResult = "PASS" | "FAIL" | "CONDITIONAL" | "N/A";
+
 function mapChecklistToJournal(
-  cl: Array<{ label: string; result: "PASS" | "FAIL"; detail: string }>,
+  cl: Array<{ label: string; result: ChecklistResult; detail: string }>,
 ) {
   const get = (label: string) =>
-    cl.find((c) => c.label === label) ?? { result: "FAIL" as const, detail: "Not evaluated" };
+    cl.find((c) => c.label === label) ?? { result: "FAIL" as ChecklistResult, detail: "Not evaluated" };
+  // Items 1-10 use binary PASS/FAIL only; coerce anything else to FAIL.
+  const bin = (r: ChecklistResult): "PASS" | "FAIL" => (r === "PASS" ? "PASS" : "FAIL");
   return {
-    ema_stack_aligned:   { result: get("EMA Stack Aligned").result,   detail: get("EMA Stack Aligned").detail   },
-    daily_confirms:      { result: get("Daily Confirms").result,      detail: get("Daily Confirms").detail      },
-    rsi_reset_zone:      { result: get("RSI Reset Zone").result,      detail: get("RSI Reset Zone").detail      },
-    volume_confirmed:    { result: get("Volume Confirmed").result,    detail: get("Volume Confirmed").detail    },
-    price_at_key_level:  { result: get("Price at Key Level").result,  detail: get("Price at Key Level").detail  },
-    rr_valid:            { result: get("R/R Valid").result,           detail: get("R/R Valid").detail           },
-    session_timing:      { result: get("Session Timing").result,      detail: get("Session Timing").detail      },
-    eia_window_clear:    { result: get("EIA Window Clear").result,    detail: get("EIA Window Clear").detail    },
-    vwap_aligned:        { result: get("VWAP Aligned").result,        detail: get("VWAP Aligned").detail        },
-    htf_structure_clear: { result: get("HTF Structure Clear").result, detail: get("HTF Structure Clear").detail },
+    ema_stack_aligned:   { result: bin(get("EMA Stack Aligned").result),   detail: get("EMA Stack Aligned").detail   },
+    daily_confirms:      { result: bin(get("Daily Confirms").result),      detail: get("Daily Confirms").detail      },
+    rsi_reset_zone:      { result: bin(get("RSI Reset Zone").result),      detail: get("RSI Reset Zone").detail      },
+    volume_confirmed:    { result: bin(get("Volume Confirmed").result),    detail: get("Volume Confirmed").detail    },
+    price_at_key_level:  { result: bin(get("Price at Key Level").result),  detail: get("Price at Key Level").detail  },
+    rr_valid:            { result: bin(get("R/R Valid").result),           detail: get("R/R Valid").detail           },
+    session_timing:      { result: bin(get("Session Timing").result),      detail: get("Session Timing").detail      },
+    eia_window_clear:    { result: bin(get("EIA Window Clear").result),    detail: get("EIA Window Clear").detail    },
+    vwap_aligned:        { result: bin(get("VWAP Aligned").result),        detail: get("VWAP Aligned").detail        },
+    htf_structure_clear: { result: bin(get("HTF Structure Clear").result), detail: get("HTF Structure Clear").detail },
+    // Layer 6 (v1.9) — pass through 4-state.
+    overnight_range_position: { result: get("Overnight Range Position").result, detail: get("Overnight Range Position").detail },
+    ovx_regime:               { result: get("OVX Regime Clean").result,         detail: get("OVX Regime Clean").detail },
   };
 }
 
@@ -167,6 +174,7 @@ export default function PreTradePage() {
   const [form, setForm] = useState({
     price: "", ema20: "", ema50: "", ema200: "",
     rsi: "", triggerVolume: "", avgVolume: "", ovx: "",
+    asiaHigh: "", asiaLow: "",
     dxy: "Declining", fvg: "Bullish",
     fvgTop: "", fvgBottom: "", fvgAge: "",
     session: "NY Open",
@@ -278,7 +286,7 @@ export default function PreTradePage() {
       const stopRaw = form.stopPrice ? parseFloat(form.stopPrice) : null;
       const stopParsed = stopRaw != null && Number.isFinite(stopRaw) ? stopRaw : null;
       const computed = computeLevels(result.decision, entry_price, stopParsed);
-      const score = Math.max(0, Math.min(10, Math.round(result.score)));
+      const score = Math.max(0, Math.min(12, Math.round(result.score)));
       const reasoning = (result.reasoning ?? "").trim().length >= 10
         ? result.reasoning
         : "Logged from pre-trade analysis.";
@@ -288,7 +296,7 @@ export default function PreTradePage() {
       const tp2_price  = computed.tp2_price  ?? result.tp2_price  ?? null;
 
       const payload = {
-        rules_version: "1.8",
+        rules_version: "1.9",
         session,
         direction: result.decision,
         source: "MANUAL" as const,
@@ -430,6 +438,39 @@ export default function PreTradePage() {
                 <option>Asia</option>
                 <option>Off-hours</option>
               </select>
+            </div>
+          </div>
+        </div>
+
+        {/* ── SESSION CONTEXT ── */}
+        <div style={{ borderTop: "1px solid #2a2a2e", marginTop: 16, paddingTop: 14 }}>
+          <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "3px", color: "#666670", marginBottom: 12 }}>
+            SESSION CONTEXT
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div>
+              <label style={labelStyle}>ASIA SESSION HIGH</label>
+              <input
+                style={inputStyle}
+                type="number"
+                step="0.01"
+                value={form.asiaHigh}
+                onChange={(e) => set("asiaHigh", e.target.value)}
+                placeholder="—"
+              />
+              <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 8, color: "#666670", marginTop: 4 }}>Overnight Asia high</div>
+            </div>
+            <div>
+              <label style={labelStyle}>ASIA SESSION LOW</label>
+              <input
+                style={inputStyle}
+                type="number"
+                step="0.01"
+                value={form.asiaLow}
+                onChange={(e) => set("asiaLow", e.target.value)}
+                placeholder="—"
+              />
+              <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 8, color: "#666670", marginTop: 4 }}>Overnight Asia low</div>
             </div>
           </div>
         </div>

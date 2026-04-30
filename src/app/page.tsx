@@ -351,6 +351,10 @@ const CHECKLIST_ITEMS = [
   "R/R ≥ 2:1",
   "Session Timing",
   "EIA Window Clear",
+  "VWAP Aligned",
+  "HTF Structure Clear",
+  "Overnight Range Position",
+  "OVX Regime",
 ];
 
 function OutcomeBadge({ status, result }: { status: string; result?: string | null }) {
@@ -416,7 +420,7 @@ export default function DashboardPage() {
         <div style={{ background: "#1a1a1e", border: "1px solid #2a2a2e", borderRadius: 6, padding: 20 }}>
           <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "3px", color: "#666670", marginBottom: 14 }}>A+ CHECKLIST</div>
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
-            <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 28, fontWeight: 700, color: "#e0e0e0" }}>8/8</span>
+            <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 28, fontWeight: 700, color: "#e0e0e0" }}>12/12</span>
             <GradeBadge grade="A+" />
           </div>
           {CHECKLIST_ITEMS.map((item) => (

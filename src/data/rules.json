@@ -15,7 +15,7 @@
         "Daily close relative to VWAP — institutional positioning heading into next session",
         "Weekly bias set Sunday by market-environment-strategist agent — LONG / SHORT / NEUTRAL"
       ],
-      "output": "Directional bias for the week. LONG, SHORT, or NO BIAS. This is the filter — only take 4H setups that align with daily/weekly bias. Countertrend setups require 9+/10 score minimum.",
+      "output": "Directional bias for the week. LONG, SHORT, or NO BIAS. This is the filter — only take 4H setups that align with daily/weekly bias. Countertrend setups require 11+/12 score minimum.",
       "cadence": "Set Sunday. Update only if daily closes a candle that breaks the macro structure — not intraday."
     },
     "four_hour": {
@@ -52,15 +52,15 @@
   },
   "strategy": {
     "name": "CRUDE INTENTIONS — Three-Timeframe EMA + FVG Confluence System",
-    "version": "1.8",
+    "version": "1.9",
     "instrument": "WTI Crude Oil Futures (CL)",
     "exchange": "CME via Apex Trader Funding",
     "tick_value": 10.0,
     "tick_size": 0.01,
-    "description": "Three-timeframe confluence system. Daily/Weekly defines macro bias and direction. 4H identifies setup zones — FVG maps, EMA confluence levels, RSI reset zones. 15min provides the entry trigger — candle confirmation inside the 4H zone with stop placed at the 15min structural level. All three layers must align. A+ confluence score minimum 7/10 before any entry fires. When in doubt — NO TRADE."
+    "description": "Three-timeframe confluence system. Daily/Weekly defines macro bias and direction. 4H identifies setup zones — FVG maps, EMA confluence levels, RSI reset zones. 15min provides the entry trigger — candle confirmation inside the 4H zone with stop placed at the 15min structural level. All three layers must align. A+ confluence score minimum 9/12 before any entry fires. When in doubt — NO TRADE."
   },
   "aplus_checklist": {
-    "description": "Score 1 point for each. Minimum 7/10 to take the trade. 10/10 = full size. 7-8/10 = standard size. Below 7 = NO TRADE.",
+    "description": "Score 1 point for each. Minimum 9/12 to take the trade. 12/12 = full size. 10-11/12 = standard size. 9/12 = half size. Below 9 = NO TRADE.",
     "layer_1_macro_bias": {
       "_timeframe": "DAILY / WEEKLY",
       "checks": [
@@ -96,16 +96,42 @@
         "15min VWAP and session aligned — price reclaiming VWAP on trigger candle AND session is NY open"
       ]
     },
-    "scoring": {
-      "10_10": "A+ — CONVICTION — full size",
-      "8_9":  "A  — HIGH — standard size",
-      "7_10": "B+ — MEDIUM — standard to half size",
-      "5_6":  "B  — NO TRADE",
-      "0_4":  "F  — NO TRADE"
+    "layer_6_session_context": {
+      "_timeframe": "PRE-SESSION (DAILY OPEN)",
+      "checks": [
+        "Overnight range position — for longs, price above the Asia session high (PASS); within 0.15 of edge (CONDITIONAL); inside the overnight range (FAIL). Mirror for shorts vs Asia low.",
+        "OVX regime clean — implied crude vol between 20 and 35 (PASS); 35-50 elevated but tradeable (CONDITIONAL); >50 chaos or <20 dead-tape (FAIL)."
+      ]
     },
-    "minimum_to_trade": 7,
-    "total_points": 10,
-    "eia_hard_block": "EIA window (Wednesday 7:30 AM–1:30 PM ET) overrides the checklist. 10/10 during EIA = NO TRADE."
+    "scoring": {
+      "12_12": "A+ — CONVICTION — full size",
+      "10_11": "A  — HIGH — standard size",
+      "9_9":   "B+ — MEDIUM — half size",
+      "7_8":   "B  — NO TRADE",
+      "0_6":   "F  — NO TRADE"
+    },
+    "minimum_to_trade": 9,
+    "total_points": 12,
+    "countertrend_minimum": 11,
+    "eia_hard_block": "EIA window (Wednesday 7:30 AM–1:30 PM ET) overrides the checklist. 12/12 during EIA = NO TRADE."
   },
-  "notes": "v1.8 — Three-timeframe architecture formalized. Daily/Weekly = macro bias. 4H = setup identification. 15min = entry trigger. A+ checklist restructured into 5 layers. Entry stops now at 15min trigger candle structural level."
+  "indicators": {
+    "overnight_range": {
+      "_description": "Asia session high/low captured at NY open. Used by Layer 6 overnight_range_position check.",
+      "proximity_threshold": 0.15,
+      "pass_rule_long": "Price above Asia high",
+      "pass_rule_short": "Price below Asia low",
+      "conditional_rule": "Within 0.15 of the relevant edge",
+      "fail_rule": "Inside the Asia range middle"
+    },
+    "ovx_regime": {
+      "_description": "OVX (CBOE Crude Oil Volatility Index) regime classifier for Layer 6 ovx_regime check.",
+      "pass_low": 20,
+      "pass_high": 35,
+      "conditional_high": 50,
+      "fail_above": 50,
+      "fail_below": 20
+    }
+  },
+  "notes": "v1.9 — Layer 6 (PRE-SESSION) added with overnight_range_position and ovx_regime. Total points expanded 10→12, minimum_to_trade 7→9, countertrend 9→11. Original 10 layers untouched. v1.8 — Three-timeframe architecture formalized. Daily/Weekly = macro bias. 4H = setup identification. 15min = entry trigger."
 }

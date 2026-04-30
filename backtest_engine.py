@@ -156,10 +156,11 @@ def simulate(direction, entry, atr, future):
 
 
 def build_entry(date_signal, date_close, direction, entry, sim, ema20, ema50, ema200, rsi):
-    score = 3  # 3 PASSes out of 10
+    score = 3  # 3 PASSes out of 12
     grade = "F"
     pass_item = lambda detail: {"result": "PASS", "detail": detail}
     fail_default = {"result": "FAIL", "detail": "Approximated from daily OHLCV — not evaluated"}
+    na_default = {"result": "N/A", "detail": "Not available in daily OHLCV backtest data"}
 
     checklist = {
         "ema_stack_aligned": pass_item(f"EMA20/50/200 stacked {direction.lower()} on daily"),
@@ -172,6 +173,8 @@ def build_entry(date_signal, date_close, direction, entry, sim, ema20, ema50, em
         "eia_window_clear": fail_default,
         "vwap_aligned": fail_default,
         "htf_structure_clear": fail_default,
+        "overnight_range_position": na_default,
+        "ovx_regime": na_default,
     }
 
     # 09:30 ET signal entry; close stamped at 16:00 ET on the close bar.
@@ -180,7 +183,7 @@ def build_entry(date_signal, date_close, direction, entry, sim, ema20, ema50, em
     close_iso = to_utc_iso(date_close, 16, 0)
 
     return {
-        "rules_version": "1.8",
+        "rules_version": "1.9",
         "session": "NY_OPEN",
         "direction": direction,
         "source": "IMPORT",

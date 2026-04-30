@@ -1,5 +1,10 @@
 import { z } from 'zod';
+// 2-state checklist item — used for the original 10 layers.
 const C = z.object({ result: z.enum(['PASS','FAIL']), detail: z.string().min(1).max(500) });
+// 4-state checklist item — used for v1.9 Layer 6 (overnight range, OVX regime)
+// where CONDITIONAL is a noted-but-not-auto-failing middle state and N/A
+// applies when input data isn't available (e.g. backtest synthetic entries).
+const C4 = z.object({ result: z.enum(['PASS','FAIL','CONDITIONAL','N/A']), detail: z.string().min(1).max(500) });
 export const MarketContextSchema = z.object({
   price: z.number().finite().min(10).max(500),
   ema20: z.number().finite().min(10).max(500),
@@ -25,7 +30,7 @@ export const JournalWriteSchema = z.object({
   session: z.enum(['NY_OPEN','NY_AFTERNOON','LONDON','OVERLAP','ASIA','OFF_HOURS']),
   direction: z.enum(['LONG','SHORT','NO TRADE']),
   source: z.enum(['WEBHOOK','MANUAL','IMPORT']).default('MANUAL'),
-  score: z.number().int().min(0).max(10),
+  score: z.number().int().min(0).max(12),
   grade: z.enum(['A+','A','B+','B','F']),
   confidence_label: z.enum(['CONVICTION','HIGH','MEDIUM','LOW']),
   entry_price: z.number().finite().min(10).max(500).nullable(),
@@ -39,6 +44,9 @@ export const JournalWriteSchema = z.object({
     volume_confirmed: C, price_at_key_level: C, rr_valid: C,
     session_timing: C, eia_window_clear: C, vwap_aligned: C,
     htf_structure_clear: C,
+    // Layer 6 (v1.9 add) — 4-state, see C4 above.
+    overnight_range_position: C4,
+    ovx_regime: C4,
   }),
   blocked_reasons: z.array(z.string().max(300)).default([]),
   wait_for: z.string().max(500).nullable().default(null),

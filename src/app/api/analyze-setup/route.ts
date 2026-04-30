@@ -50,6 +50,9 @@ const SetupInputSchema = z.object({
   })).min(1).max(3).optional(),
   htf_ema_stack:   z.enum(['BULLISH', 'BEARISH', 'MIXED']).optional(),
   setup_ema_stack: z.enum(['BULLISH', 'BEARISH', 'MIXED']).optional(),
+  // v1.9 Layer 6 inputs
+  asiaHigh:        z.number().finite().min(10).max(500).optional(),
+  asiaLow:         z.number().finite().min(10).max(500).optional(),
 }).strict();
 
 // ─── ALFRED response shape (F-5) ──────────────────────────────────────────────
@@ -58,13 +61,14 @@ const SetupInputSchema = z.object({
 // out-of-vocabulary enum values) fails validation and we fall through to
 // the deterministic fallback scorer instead of round-tripping the raw object.
 const AlfredResponseSchema = z.object({
-  score: z.number().int().min(0).max(10),
+  score: z.number().int().min(0).max(12),
   grade: z.enum(['A+', 'A', 'B+', 'B', 'F']),
   decision: z.enum(['LONG', 'SHORT', 'NO TRADE']),
   confidence_label: z.enum(['CONVICTION', 'HIGH', 'MEDIUM', 'LOW']),
   checklist: z.array(z.object({
     label: z.string().min(1).max(100),
-    result: z.enum(['PASS', 'FAIL']),
+    // v1.9: items 11-12 may emit CONDITIONAL/N/A in addition to PASS/FAIL.
+    result: z.enum(['PASS', 'FAIL', 'CONDITIONAL', 'N/A']),
     detail: z.string().min(1).max(500),
   })).min(1).max(20),
   blocked_reasons: z.array(z.string().max(300)).default([]),
@@ -73,15 +77,15 @@ const AlfredResponseSchema = z.object({
   disclaimer: z.string().max(500).optional(),
 }).strict();
 
-// ─── ALFRED v1.8 System Prompt ────────────────────────────────────────────────
-const SYSTEM_PROMPT = `You are ALFRED — the analysis engine for CRUDE INTENTIONS v1.8.
-You score CL futures setups against a 5-layer, 10-point A+ checklist.
+// ─── ALFRED v1.9 System Prompt ────────────────────────────────────────────────
+const SYSTEM_PROMPT = `You are ALFRED — the analysis engine for CRUDE INTENTIONS v1.9.
+You score CL futures setups against a 6-layer, 12-point A+ checklist.
 Three-timeframe architecture: Daily/Weekly (macro bias) → 4H (setup zone) → 15min (entry trigger).
 
-MINIMUM TO TRADE: 7/10. Below 7 = NO TRADE.
-COUNTERTREND MINIMUM: 9/10 required if opposing weekly bias.
+MINIMUM TO TRADE: 9/12. Below 9 = NO TRADE.
+COUNTERTREND MINIMUM: 11/12 required if opposing weekly bias.
 
-A+ CHECKLIST — v1.8:
+A+ CHECKLIST — v1.9:
 Layer 1 [Daily/Weekly — 2 pts]:
   1. ema_stack_aligned: Daily EMA20/50/200 aligned + weekly EMA200 slope agrees
   2. daily_confirms: Weekly bias confirms direction
@@ -102,8 +106,18 @@ Layer 5 [15min Trigger — 2 pts]:
   9. vwap_aligned: Above VWAP for longs, below for shorts
   10. htf_structure_clear: No daily/weekly S/R within 0.50 capping the trade
 
-GRADING: 10=A+, 8–9=A, 7=B+, 5–6=B, 0–4=F
-CONFIDENCE: 10→CONVICTION, 8–9→HIGH, 7→MEDIUM, ≤6→LOW
+Layer 6 [Session Context — 2 pts] (v1.9 add):
+  11. overnight_range_position: price above Asia session high for longs / below Asia session low for shorts at NY open
+  12. ovx_regime: OVX 20-35 = PASS, 35-50 = CONDITIONAL, above 50 or below 20 = FAIL
+
+GRADING:
+  12/12     = A+ — Full size, take the trade
+  10-11/12  = A  — Standard size, take the trade
+  9/12      = B+ — Standard to half size
+  7-8/12    = B  — Half size or skip
+  0-6/12    = F  — NO TRADE
+
+CONFIDENCE: 12→CONVICTION, 10-11→HIGH, 9→MEDIUM, ≤8→LOW
 
 HARD BLOCKS (override all scores): EIA window active, OVX > 50
 
@@ -112,25 +126,42 @@ VOLUME RULES:
 - CONDITIONAL: volume 0.85x-0.99x average — note as weak in detail, do not auto-fail, reduce conviction
 - FAIL: volume below 0.85x average — thin move, no institutional footprint
 
+OVERNIGHT RANGE RULES:
+- PASS (longs): price above Asia session high at NY open
+- PASS (shorts): price below Asia session low at NY open
+- CONDITIONAL: price within 0.15 of Asia range edge in trade direction — note, reduce conviction
+- FAIL: price in middle of range, more than 0.15 from both extremes
+
+OVX REGIME RULES:
+- PASS: OVX 20-35 — clean regime
+- CONDITIONAL: OVX 35-50 — elevated, size down
+- FAIL: OVX above 50 (hard block) or below 20 (choppy)
+
 Output ONLY valid JSON. No preamble, no markdown fences.
+
+Items 1-10 only emit "PASS" or "FAIL". Items 11-12 may also emit "CONDITIONAL"
+or "N/A" (when input data is missing). CONDITIONAL contributes 0 to the score
+but is not an auto-fail.
 
 SCHEMA:
 {
-  "score": <0–10>,
+  "score": <0–12>,
   "grade": "A+" | "A" | "B+" | "B" | "F",
   "decision": "LONG" | "SHORT" | "NO TRADE",
   "confidence_label": "CONVICTION" | "HIGH" | "MEDIUM" | "LOW",
   "checklist": [
-    {"label": "EMA Stack Aligned",   "result": "PASS"|"FAIL", "detail": "string"},
-    {"label": "Daily Confirms",      "result": "PASS"|"FAIL", "detail": "string"},
-    {"label": "RSI Reset Zone",      "result": "PASS"|"FAIL", "detail": "string"},
-    {"label": "Volume Confirmed",    "result": "PASS"|"FAIL", "detail": "string"},
-    {"label": "Price at Key Level",  "result": "PASS"|"FAIL", "detail": "string"},
-    {"label": "R/R Valid",           "result": "PASS"|"FAIL", "detail": "string"},
-    {"label": "Session Timing",      "result": "PASS"|"FAIL", "detail": "string"},
-    {"label": "EIA Window Clear",    "result": "PASS"|"FAIL", "detail": "string"},
-    {"label": "VWAP Aligned",        "result": "PASS"|"FAIL", "detail": "string"},
-    {"label": "HTF Structure Clear", "result": "PASS"|"FAIL", "detail": "string"}
+    {"label": "EMA Stack Aligned",        "result": "PASS"|"FAIL", "detail": "string"},
+    {"label": "Daily Confirms",           "result": "PASS"|"FAIL", "detail": "string"},
+    {"label": "RSI Reset Zone",           "result": "PASS"|"FAIL", "detail": "string"},
+    {"label": "Volume Confirmed",         "result": "PASS"|"FAIL", "detail": "string"},
+    {"label": "Price at Key Level",       "result": "PASS"|"FAIL", "detail": "string"},
+    {"label": "R/R Valid",                "result": "PASS"|"FAIL", "detail": "string"},
+    {"label": "Session Timing",           "result": "PASS"|"FAIL", "detail": "string"},
+    {"label": "EIA Window Clear",         "result": "PASS"|"FAIL", "detail": "string"},
+    {"label": "VWAP Aligned",             "result": "PASS"|"FAIL", "detail": "string"},
+    {"label": "HTF Structure Clear",      "result": "PASS"|"FAIL", "detail": "string"},
+    {"label": "Overnight Range Position", "result": "PASS"|"FAIL"|"CONDITIONAL"|"N/A", "detail": "string"},
+    {"label": "OVX Regime Clean",         "result": "PASS"|"FAIL"|"CONDITIONAL"|"N/A", "detail": "string"}
   ],
   "blocked_reasons": [],
   "wait_for": null,
@@ -178,7 +209,7 @@ export async function POST(req: NextRequest) {
     const marketContext = await readContext(kv);
     const marketMemorySection = buildMarketMemoryPromptSection(marketContext);
 
-    const userPrompt = `Analyze this CL futures setup against the v1.8 A+ checklist:
+    const userPrompt = `Analyze this CL futures setup against the v1.9 A+ checklist:
 
 Price: ${d.price}
 EMA20: ${d.ema20} | EMA50: ${d.ema50} | EMA200: ${d.ema200}
@@ -192,6 +223,7 @@ Session: ${d.session}
 VWAP: ${d.vwap ?? 'not provided'}
 HTF Resistance above: ${d.htfResistance ?? 'not provided'}
 HTF Support below: ${d.htfSupport ?? 'not provided'}
+Asia Session High: ${d.asiaHigh ?? 'not provided'} | Asia Session Low: ${d.asiaLow ?? 'not provided'}
 Weekly Bias: ${d.weeklyBias ?? 'not set'}
 EIA Window Active: ${d.eiaActive ? 'YES — HARD BLOCK IN EFFECT' : 'NO'}
 
@@ -215,6 +247,8 @@ Score this setup. Return JSON only.`;
       session: d.session,
       weekly_bias: d.weeklyBias ?? 'NEUTRAL',
       eia_active: d.eiaActive ?? false,
+      asia_high: d.asiaHigh,
+      asia_low: d.asiaLow,
     };
 
     try {

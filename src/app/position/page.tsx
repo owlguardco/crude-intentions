@@ -608,7 +608,7 @@ export default function PositionPage() {
               ["TARGET", fmt2(position.target)],
               ["SESSION", position.session],
               ["OPENED", localTime(position.opened_at)],
-              ["ALFRED SCORE", position.alfred_score !== null && position.alfred_score !== undefined ? `${position.alfred_score}/10` : "—"],
+              ["ALFRED SCORE", position.alfred_score !== null && position.alfred_score !== undefined ? `${position.alfred_score}/12` : "—"],
               ["CONFIDENCE", position.alfred_confidence ?? "—"],
             ].map(([label, val]) => (
               <div key={label} style={{

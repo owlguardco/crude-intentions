@@ -32,12 +32,16 @@ export interface FallbackScorerInput {
   session: 'NY_OPEN' | 'NY_AFTERNOON' | 'LONDON' | 'OVERLAP' | 'ASIA' | 'OFF_HOURS';
   weekly_bias: 'LONG' | 'SHORT' | 'NEUTRAL';
   eia_active: boolean;
+  // v1.9 Layer 6 inputs — optional (N/A when absent).
+  asia_high?: number;
+  asia_low?: number;
 }
 
 // ── Output ─────────────────────────────────────────────────────────────────
 export interface ChecklistItem {
   label: string;
-  result: 'PASS' | 'FAIL';
+  // v1.9: items 11-12 widen to 4-state. Items 1-10 still emit PASS/FAIL only.
+  result: 'PASS' | 'FAIL' | 'CONDITIONAL' | 'N/A';
   detail: string;
 }
 
@@ -56,9 +60,13 @@ export interface FallbackScorerResult {
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────
-const MIN_SCORE_TO_TRADE       = 7;
-const COUNTERTREND_MIN_SCORE   = 9;
+const MIN_SCORE_TO_TRADE       = 9;   // v1.9: 12-point system, min 9/12
+const COUNTERTREND_MIN_SCORE   = 11;  // v1.9: countertrend keeps a +2 differential
 const OVX_HARD_BLOCK           = 50;
+const OVX_REGIME_LOW           = 20;
+const OVX_REGIME_PASS_HIGH     = 35;
+const OVX_REGIME_CONDITIONAL_HIGH = 50;
+const OVERNIGHT_RANGE_PROXIMITY = 0.15;
 const EMA20_PROXIMITY_PCT      = 0.003; // 0.3%
 const FALLBACK_DISCLAIMER =
   'AI scoring unavailable — deterministic fallback used. Treat as a sanity check, not a full ALFRED analysis.';
@@ -207,6 +215,86 @@ export function runFallbackScorer(input: FallbackScorerInput): FallbackScorerRes
         ? `OVX ${input.ovx} below hard-block threshold`
         : `OVX ${input.ovx} above ${OVX_HARD_BLOCK} — hard block`,
     },
+    // ── Layer 6 (v1.9): Session Context (2 pts) ─────────────────────────────
+    (() => {
+      // Overnight range position
+      const ah = input.asia_high;
+      const al = input.asia_low;
+      if (typeof ah !== 'number' || typeof al !== 'number') {
+        return {
+          label: 'Overnight Range Position',
+          result: 'N/A' as const,
+          detail: 'Asia session high/low not provided',
+        };
+      }
+      if (dir === 'LONG') {
+        if (input.price > ah) {
+          return {
+            label: 'Overnight Range Position',
+            result: 'PASS' as const,
+            detail: `Price ${input.price} above Asia high ${ah} — range breakout confirmed`,
+          };
+        }
+        if (input.price >= ah - OVERNIGHT_RANGE_PROXIMITY) {
+          return {
+            label: 'Overnight Range Position',
+            result: 'CONDITIONAL' as const,
+            detail: `Price ${input.price} within ${OVERNIGHT_RANGE_PROXIMITY} of Asia high ${ah} — approaching breakout, reduce conviction`,
+          };
+        }
+        return {
+          label: 'Overnight Range Position',
+          result: 'FAIL' as const,
+          detail: `Price ${input.price} buried in Asia range (${al}-${ah})`,
+        };
+      }
+      // SHORT
+      if (input.price < al) {
+        return {
+          label: 'Overnight Range Position',
+          result: 'PASS' as const,
+          detail: `Price ${input.price} below Asia low ${al} — range breakdown confirmed`,
+        };
+      }
+      if (input.price <= al + OVERNIGHT_RANGE_PROXIMITY) {
+        return {
+          label: 'Overnight Range Position',
+          result: 'CONDITIONAL' as const,
+          detail: `Price ${input.price} within ${OVERNIGHT_RANGE_PROXIMITY} of Asia low ${al} — approaching breakdown, reduce conviction`,
+        };
+      }
+      return {
+        label: 'Overnight Range Position',
+        result: 'FAIL' as const,
+        detail: `Price ${input.price} buried in Asia range (${al}-${ah})`,
+      };
+    })(),
+    (() => {
+      // OVX regime
+      const o = input.ovx;
+      if (o >= OVX_REGIME_LOW && o <= OVX_REGIME_PASS_HIGH) {
+        return {
+          label: 'OVX Regime Clean',
+          result: 'PASS' as const,
+          detail: `OVX ${o} in clean regime (${OVX_REGIME_LOW}-${OVX_REGIME_PASS_HIGH})`,
+        };
+      }
+      if (o > OVX_REGIME_PASS_HIGH && o <= OVX_REGIME_CONDITIONAL_HIGH) {
+        return {
+          label: 'OVX Regime Clean',
+          result: 'CONDITIONAL' as const,
+          detail: `OVX ${o} elevated (${OVX_REGIME_PASS_HIGH}-${OVX_REGIME_CONDITIONAL_HIGH}) — size down`,
+        };
+      }
+      return {
+        label: 'OVX Regime Clean',
+        result: 'FAIL' as const,
+        detail:
+          o > OVX_REGIME_CONDITIONAL_HIGH
+            ? `OVX ${o} above ${OVX_REGIME_CONDITIONAL_HIGH} — hard-block territory`
+            : `OVX ${o} below ${OVX_REGIME_LOW} — choppy low-vol regime`,
+      };
+    })(),
   ];
 
   const score = checklist.reduce((s, c) => s + (c.result === 'PASS' ? 1 : 0), 0);
@@ -230,10 +318,10 @@ export function runFallbackScorer(input: FallbackScorerInput): FallbackScorerRes
   // ── Reasoning ───────────────────────────────────────────────────────────
   const reasoning =
     decision === 'NO TRADE'
-      ? `[FALLBACK] Score ${score}/10 (${grade}). ${blocked.length > 0 ? 'Blocked: ' + blocked.join('; ') + '. ' : ''}` +
-        `Required ${requiredScore}/10 to trade${isCountertrend ? ' (countertrend)' : ''}. ` +
+      ? `[FALLBACK] Score ${score}/12 (${grade}). ${blocked.length > 0 ? 'Blocked: ' + blocked.join('; ') + '. ' : ''}` +
+        `Required ${requiredScore}/12 to trade${isCountertrend ? ' (countertrend)' : ''}. ` +
         `Anthropic API unreachable — this is a deterministic fallback, not full ALFRED analysis.`
-      : `[FALLBACK] Score ${score}/10 (${grade}) — ${decision} ${isCountertrend ? '(countertrend, 9+ required) ' : ''}` +
+      : `[FALLBACK] Score ${score}/12 (${grade}) — ${decision} ${isCountertrend ? '(countertrend, 11+ required) ' : ''}` +
         `meets minimum threshold. EMA stack ${stackAligned ? 'aligned' : 'unaligned'}, ` +
         `RSI ${input.rsi} ${rsiInZone ? 'in' : 'outside'} reset zone, ` +
         `${insideFvg ? 'inside FVG' : nearEma20 ? 'near EMA20' : 'no key-level confluence'}. ` +
@@ -255,9 +343,10 @@ export function runFallbackScorer(input: FallbackScorerInput): FallbackScorerRes
 }
 
 function scoreToGrade(score: number): 'A+' | 'A' | 'B+' | 'B' | 'F' {
-  if (score === 10) return 'A+';
-  if (score >= 8)   return 'A';
-  if (score === 7)  return 'B+';
-  if (score >= 5)   return 'B';
+  // v1.9: 12-point system per spec.
+  if (score === 12) return 'A+';
+  if (score >= 10)  return 'A';
+  if (score === 9)  return 'B+';
+  if (score >= 7)   return 'B';
   return 'F';
 }

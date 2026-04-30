@@ -17,20 +17,22 @@ import { checkReplay } from '@/lib/replay-protect';
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY;
 
-const ALFRED_SYSTEM_PROMPT = `You are ALFRED — the analysis engine for CRUDE INTENTIONS v1.8.
-You score CL futures setups against a 5-layer, 10-point A+ checklist.
+const ALFRED_SYSTEM_PROMPT = `You are ALFRED — the analysis engine for CRUDE INTENTIONS v1.9.
+You score CL futures setups against a 6-layer, 12-point A+ checklist.
 Three-timeframe architecture: Daily/Weekly (macro bias) → 4H (setup zone) → 15min (entry trigger).
-MINIMUM TO TRADE: 7/10. COUNTERTREND MINIMUM: 9/10.
+MINIMUM TO TRADE: 9/12. COUNTERTREND MINIMUM: 11/12.
 Layer 1 [Daily/Weekly 2pts]: ema_stack_aligned, daily_confirms
 Layer 2 [4H Momentum 2pts]: rsi_reset_zone (35-55 longs 45-65 shorts), volume_confirmed (15min trigger candle volume >= 20-bar avg)
 Layer 3 [Structure 2pts]: price_at_key_level (inside 4H FVG or EMA20), rr_valid (2:1 min)
 Layer 4 [HTF Context 2pts]: session_timing (NY Open 9:30-11:45 ET), eia_window_clear
 Layer 5 [15min Trigger 2pts]: vwap_aligned, htf_structure_clear
+Layer 6 [Session Context 2pts]: overnight_range_position (price above Asia high LONGS / below Asia low SHORTS), ovx_regime (OVX 20-35 PASS, 35-50 CONDITIONAL, >50 or <20 FAIL)
 HARD BLOCKS: EIA window active, OVX > 50
-GRADING: 10=A+ CONVICTION, 8-9=A HIGH, 7=B+ MEDIUM, 5-6=B NO TRADE, 0-4=F NO TRADE
+GRADING: 12=A+ CONVICTION, 10-11=A HIGH, 9=B+ MEDIUM, 7-8=B NO TRADE, 0-6=F NO TRADE
+Items 1-10 emit PASS or FAIL only. Items 11-12 may also emit CONDITIONAL or N/A.
 Output ONLY valid JSON. No prose, no markdown fences, no preamble.
 SCHEMA:
-{"score":<0-10>,"grade":"A+"|"A"|"B+"|"B"|"F","decision":"LONG"|"SHORT"|"NO TRADE","confidence_label":"CONVICTION"|"HIGH"|"MEDIUM"|"LOW","checklist":[{"label":"EMA Stack Aligned","result":"PASS"|"FAIL","detail":"string"},{"label":"Daily Confirms","result":"PASS"|"FAIL","detail":"string"},{"label":"RSI Reset Zone","result":"PASS"|"FAIL","detail":"string"},{"label":"Volume Confirmed","result":"PASS"|"FAIL","detail":"string"},{"label":"Price at Key Level","result":"PASS"|"FAIL","detail":"string"},{"label":"R/R Valid","result":"PASS"|"FAIL","detail":"string"},{"label":"Session Timing","result":"PASS"|"FAIL","detail":"string"},{"label":"EIA Window Clear","result":"PASS"|"FAIL","detail":"string"},{"label":"VWAP Aligned","result":"PASS"|"FAIL","detail":"string"},{"label":"HTF Structure Clear","result":"PASS"|"FAIL","detail":"string"}],"blocked_reasons":[],"wait_for":null,"reasoning":"2-3 sentences","disclaimer":"AI-generated research only."}`;
+{"score":<0-12>,"grade":"A+"|"A"|"B+"|"B"|"F","decision":"LONG"|"SHORT"|"NO TRADE","confidence_label":"CONVICTION"|"HIGH"|"MEDIUM"|"LOW","checklist":[{"label":"EMA Stack Aligned","result":"PASS"|"FAIL","detail":"string"},{"label":"Daily Confirms","result":"PASS"|"FAIL","detail":"string"},{"label":"RSI Reset Zone","result":"PASS"|"FAIL","detail":"string"},{"label":"Volume Confirmed","result":"PASS"|"FAIL","detail":"string"},{"label":"Price at Key Level","result":"PASS"|"FAIL","detail":"string"},{"label":"R/R Valid","result":"PASS"|"FAIL","detail":"string"},{"label":"Session Timing","result":"PASS"|"FAIL","detail":"string"},{"label":"EIA Window Clear","result":"PASS"|"FAIL","detail":"string"},{"label":"VWAP Aligned","result":"PASS"|"FAIL","detail":"string"},{"label":"HTF Structure Clear","result":"PASS"|"FAIL","detail":"string"},{"label":"Overnight Range Position","result":"PASS"|"FAIL"|"CONDITIONAL"|"N/A","detail":"string"},{"label":"OVX Regime Clean","result":"PASS"|"FAIL"|"CONDITIONAL"|"N/A","detail":"string"}],"blocked_reasons":[],"wait_for":null,"reasoning":"2-3 sentences","disclaimer":"AI-generated research only."}`;
 
 const ADVERSARIAL_SYSTEM_PROMPT = `You are an adversarial trading analyst. Find every reason to SKIP this CL trade.
 Check: trend alignment, FVG quality, RSI context, macro timing, OVX regime, R:R after slippage, recency bias, score honesty.
@@ -62,6 +64,9 @@ const WebhookSignalSchema = z.object({
   htf_ema_stack: z.enum(['BULLISH', 'BEARISH', 'MIXED']).optional(),
   setup_ema_stack: z.enum(['BULLISH', 'BEARISH', 'MIXED']).optional(),
   signal_id: z.string().min(1).max(64).optional(),
+  // v1.9 Layer 6 — TradingView alerts may not always carry these.
+  asia_high: z.number().finite().min(10).max(500).optional(),
+  asia_low:  z.number().finite().min(10).max(500).optional(),
 }).strict();
 
 type WebhookSignal = z.infer<typeof WebhookSignalSchema>;
@@ -80,7 +85,7 @@ function computeTradeLevels(direction: 'LONG' | 'SHORT' | 'NO TRADE', entry: num
   if (risk <= 0) return { stop_price: null, tp1_price: null, tp2_price: null };
   return { stop_price: round2(stop), tp1_price: round2(entry - 2 * risk), tp2_price: round2(entry - 4 * risk) };
 }
-interface ChecklistItem { label: string; result: 'PASS' | 'FAIL'; detail: string; }
+interface ChecklistItem { label: string; result: 'PASS' | 'FAIL' | 'CONDITIONAL' | 'N/A'; detail: string; }
 interface AlfredResult {
   score: number; grade: string; decision: 'LONG' | 'SHORT' | 'NO TRADE';
   confidence_label: string; checklist: ChecklistItem[];
@@ -103,6 +108,7 @@ function signalToFallbackInput(s: WebhookSignal): FallbackScorerInput {
     rsi: s.rsi, trigger_volume: s.trigger_volume, avg_volume: s.avg_volume, vwap: s.vwap, ovx: s.ovx,
     dxy, fvg_direction: fvgDir, fvg_top: s.fvg_top, fvg_bottom: s.fvg_bottom,
     session: s.session, weekly_bias: wb, eia_active: s.eia_active,
+    asia_high: s.asia_high, asia_low: s.asia_low,
   };
 }
 
@@ -136,7 +142,7 @@ async function runAdversarialScan(signal: WebhookSignal, alfred: AlfredResult) {
   if (alfred.decision === 'NO TRADE') {
     return { verdict: 'SKIP' as const, concerns: ['ALFRED scored NO TRADE'], override_note: null };
   }
-  const prompt = `CL setup: ${alfred.decision} @ ${signal.price} | Score: ${alfred.score}/10
+  const prompt = `CL setup: ${alfred.decision} @ ${signal.price} | Score: ${alfred.score}/12
 FVG ${signal.fvg_bottom}-${signal.fvg_top} | RSI: ${signal.rsi} | OVX: ${signal.ovx}
 Reasoning: ${alfred.reasoning}
 Attack this setup. Return JSON only.`;
@@ -153,19 +159,32 @@ Attack this setup. Return JSON only.`;
   return v.success ? v.data : { verdict: 'CONDITIONAL_PASS' as const, concerns: ['Scan malformed'], override_note: null };
 }
 
+// Coerce ALFRED-emitted result strings into the binary 'PASS'|'FAIL' shape
+// expected by the journal schema for items 1-10. ALFRED is told in the prompt
+// to emit only those two for items 1-10, but if it ever drifts into
+// CONDITIONAL/N/A on a binary slot we treat as FAIL rather than failing
+// the whole journal write.
+function bin(r: 'PASS' | 'FAIL' | 'CONDITIONAL' | 'N/A'): 'PASS' | 'FAIL' {
+  return r === 'PASS' ? 'PASS' : 'FAIL';
+}
+
 function mapChecklist(checklist: ChecklistItem[]) {
-  const g = (label: string) => checklist.find(c => c.label === label) ?? { result: 'FAIL', detail: 'Not evaluated' };
+  const g = (label: string) =>
+    checklist.find(c => c.label === label) ?? { result: 'FAIL' as const, detail: 'Not evaluated' };
   return {
-    ema_stack_aligned:   { result: g('EMA Stack Aligned').result,   detail: g('EMA Stack Aligned').detail },
-    daily_confirms:      { result: g('Daily Confirms').result,       detail: g('Daily Confirms').detail },
-    rsi_reset_zone:      { result: g('RSI Reset Zone').result,       detail: g('RSI Reset Zone').detail },
-    volume_confirmed:    { result: g('Volume Confirmed').result,     detail: g('Volume Confirmed').detail },
-    price_at_key_level:  { result: g('Price at Key Level').result,   detail: g('Price at Key Level').detail },
-    rr_valid:            { result: g('R/R Valid').result,            detail: g('R/R Valid').detail },
-    session_timing:      { result: g('Session Timing').result,       detail: g('Session Timing').detail },
-    eia_window_clear:    { result: g('EIA Window Clear').result,     detail: g('EIA Window Clear').detail },
-    vwap_aligned:        { result: g('VWAP Aligned').result,         detail: g('VWAP Aligned').detail },
-    htf_structure_clear: { result: g('HTF Structure Clear').result,  detail: g('HTF Structure Clear').detail },
+    ema_stack_aligned:   { result: bin(g('EMA Stack Aligned').result),   detail: g('EMA Stack Aligned').detail },
+    daily_confirms:      { result: bin(g('Daily Confirms').result),       detail: g('Daily Confirms').detail },
+    rsi_reset_zone:      { result: bin(g('RSI Reset Zone').result),       detail: g('RSI Reset Zone').detail },
+    volume_confirmed:    { result: bin(g('Volume Confirmed').result),     detail: g('Volume Confirmed').detail },
+    price_at_key_level:  { result: bin(g('Price at Key Level').result),   detail: g('Price at Key Level').detail },
+    rr_valid:            { result: bin(g('R/R Valid').result),            detail: g('R/R Valid').detail },
+    session_timing:      { result: bin(g('Session Timing').result),       detail: g('Session Timing').detail },
+    eia_window_clear:    { result: bin(g('EIA Window Clear').result),     detail: g('EIA Window Clear').detail },
+    vwap_aligned:        { result: bin(g('VWAP Aligned').result),         detail: g('VWAP Aligned').detail },
+    htf_structure_clear: { result: bin(g('HTF Structure Clear').result),  detail: g('HTF Structure Clear').detail },
+    // Layer 6 (v1.9) — pass through 4-state values directly.
+    overnight_range_position: { result: g('Overnight Range Position').result, detail: g('Overnight Range Position').detail },
+    ovx_regime:               { result: g('OVX Regime Clean').result,         detail: g('OVX Regime Clean').detail },
   } as const;
 }
 

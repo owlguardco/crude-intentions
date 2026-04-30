@@ -137,7 +137,7 @@ export default function JournalTable() {
                 <span style={{color:'#555',fontSize:10}}>{entry.id}</span>
                 <span style={{color:'#888'}}>{fmt(entry.timestamp)}</span>
                 <span style={{color:dirColor(entry.direction),fontWeight:700}}>{entry.direction}</span>
-                <span style={{color:'#e0e0e0'}}><b>{entry.score}</b><span style={{color:'#555'}}>/10</span> <span style={{color:'#d4a520'}}>{entry.grade}</span></span>
+                <span style={{color:'#e0e0e0'}}><b>{entry.score}</b><span style={{color:'#555'}}>/12</span> <span style={{color:'#d4a520'}}>{entry.grade}</span></span>
                 <span style={{color:confColor(entry.confidence_label)}}>{entry.confidence_label}</span>
                 <span style={{color:'#e0e0e0'}}>{entry.entry_price!=null?'$'+entry.entry_price.toFixed(2):'—'}</span>
                 <span style={{color:'#888',fontSize:10}}>{entry.session.replace('_',' ')}</span>

@@ -31,7 +31,7 @@ function buildUserPrompt(entry: EntryWithLevels): string {
   const o = entry.outcome ?? {};
   const lines = [
     `Direction: ${entry.direction}`,
-    `Grade: ${entry.grade} (score ${entry.score}/10)`,
+    `Grade: ${entry.grade} (score ${entry.score}/12)`,
     `Checklist: ${passes} pass / ${fails} fail`,
     `Entry: ${entry.entry_price ?? 'N/A'}`,
     `Stop: ${entry.stop_price ?? entry.stop_loss ?? 'N/A'}`,

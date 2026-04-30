@@ -62,7 +62,7 @@ export async function POST(
     `Exit: ${entry.outcome.close_price ?? 'N/A'}`,
     `Outcome: ${status}`,
     `PnL (ticks): ${entry.outcome.result ?? 'N/A'}`,
-    `ALFRED score: ${entry.score}/10`,
+    `ALFRED score: ${entry.score}/12`,
     `ALFRED confidence: ${entry.confidence_label}`,
     `ALFRED factors: ${JSON.stringify(checklist)}`,
     `Session: ${entry.session}`,

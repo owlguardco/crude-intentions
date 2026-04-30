@@ -17,6 +17,8 @@ const FACTOR_LABELS: Record<FactorKey, string> = {
   candle_confirmation: "Candle Conf",
   volume_profile: "Vol Profile",
   no_eia_window: "No EIA",
+  overnight_range_position: "Overnight Rng",
+  ovx_regime: "OVX Regime",
 };
 
 const fmtPct = (n: number) => `${n.toFixed(1)}%`;
@@ -141,13 +143,15 @@ export default function JournalPage() {
 
   function buildGuidedTrades(): unknown[] {
     const placeholderChecklist = (() => {
-      const keys = [
+      const binaryKeys = [
         "ema_stack_aligned", "daily_confirms", "rsi_reset_zone", "volume_confirmed",
         "price_at_key_level", "rr_valid", "session_timing", "eia_window_clear",
         "vwap_aligned", "htf_structure_clear",
       ] as const;
-      const out: Record<string, { result: "FAIL"; detail: string }> = {};
-      for (const k of keys) out[k] = { result: "FAIL", detail: "Imported via guided wizard - not evaluated" };
+      const out: Record<string, { result: "FAIL" | "N/A"; detail: string }> = {};
+      for (const k of binaryKeys) out[k] = { result: "FAIL", detail: "Imported via guided wizard - not evaluated" };
+      out.overnight_range_position = { result: "N/A", detail: "Not evaluated in guided import" };
+      out.ovx_regime = { result: "N/A", detail: "Not evaluated in guided import" };
       return out;
     })();
 
@@ -167,7 +171,7 @@ export default function JournalPage() {
       const timestamp = new Date(`${r.date}T14:30:00.000Z`).toISOString();
 
       return {
-        rules_version: "1.8",
+        rules_version: "1.9",
         session: "NY_OPEN",
         direction: r.direction,
         score: 5,
