@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { JournalWriteSchema } from '@/lib/validation/journal-schema';
-import { readJournal, writeJournalEntry, updateJournalOutcome, type JournalEntry } from '@/lib/journal/writer';
-import { OutcomeUpdateSchema } from '@/lib/validation/journal-schema';
+import { readJournal, writeJournalEntry, type JournalEntry } from '@/lib/journal/writer';
 import { kv } from '@/lib/kv';
 
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY;
@@ -68,42 +67,6 @@ export async function POST(req: NextRequest) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.error('[JOURNAL] Write error:', message);
     return NextResponse.json({ error: 'Failed to write journal entry' }, { status: 500 });
-  }
-}
-
-// ─── PATCH /api/journal ───────────────────────────────────────────────────────
-// Updates the outcome of an existing entry after trade closes.
-// Body: { id: string, outcome: OutcomeUpdateInput }
-export async function PATCH(req: NextRequest) {
-  const unauth = requireAuth(req);
-  if (unauth) return unauth;
-  try {
-    const body = await req.json();
-    const { id, outcome } = body;
-
-    if (!id || typeof id !== 'string') {
-      return NextResponse.json({ error: 'Missing or invalid entry id' }, { status: 400 });
-    }
-
-    const parsed = OutcomeUpdateSchema.safeParse(outcome);
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: 'Invalid outcome data', details: parsed.error.flatten() },
-        { status: 400 }
-      );
-    }
-
-    const result = await updateJournalOutcome(id, parsed.data);
-
-    if (!result.success) {
-      return NextResponse.json({ error: result.message }, { status: 404 });
-    }
-
-    return NextResponse.json({ success: true, message: result.message });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    console.error('[JOURNAL] Outcome update error:', message);
-    return NextResponse.json({ error: 'Failed to update outcome' }, { status: 500 });
   }
 }
 

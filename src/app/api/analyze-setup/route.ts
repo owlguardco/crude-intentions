@@ -51,6 +51,27 @@ const SetupInputSchema = z.object({
   setup_ema_stack: z.enum(['BULLISH', 'BEARISH', 'MIXED']).optional(),
 }).strict();
 
+// ─── ALFRED response shape (F-5) ──────────────────────────────────────────────
+// Strict-validate the parsed ALFRED JSON before echoing to the client. A
+// jailbroken or malformed model response (extra keys, prototype pollution,
+// out-of-vocabulary enum values) fails validation and we fall through to
+// the deterministic fallback scorer instead of round-tripping the raw object.
+const AlfredResponseSchema = z.object({
+  score: z.number().int().min(0).max(10),
+  grade: z.enum(['A+', 'A', 'B+', 'B', 'F']),
+  decision: z.enum(['LONG', 'SHORT', 'NO TRADE']),
+  confidence_label: z.enum(['CONVICTION', 'HIGH', 'MEDIUM', 'LOW']),
+  checklist: z.array(z.object({
+    label: z.string().min(1).max(100),
+    result: z.enum(['PASS', 'FAIL']),
+    detail: z.string().min(1).max(500),
+  })).min(1).max(20),
+  blocked_reasons: z.array(z.string().max(300)).default([]),
+  wait_for: z.string().max(500).nullable().default(null),
+  reasoning: z.string().min(1).max(2000),
+  disclaimer: z.string().max(500).optional(),
+}).strict();
+
 // ─── ALFRED v1.8 System Prompt ────────────────────────────────────────────────
 const SYSTEM_PROMPT = `You are ALFRED — the analysis engine for CRUDE INTENTIONS v1.8.
 You score CL futures setups against a 5-layer, 10-point A+ checklist.
@@ -198,10 +219,29 @@ Score this setup. Return JSON only.`;
 
       const raw = response.content[0].type === 'text' ? response.content[0].text : '';
       const clean = raw.replace(/```json|```/g, '').trim();
-      const result = JSON.parse(clean);
+      let parsedAlfred: unknown;
+      try {
+        parsedAlfred = JSON.parse(clean);
+      } catch {
+        throw new Error('ALFRED returned non-JSON');
+      }
 
-      result.confidence_label = scoreToConfidence(result.score);
-      result.fallback = false;
+      // Override confidence_label from score so the schema's enum check
+      // catches model drift even when ALFRED itself returned a stale label.
+      if (
+        parsedAlfred && typeof parsedAlfred === 'object' &&
+        typeof (parsedAlfred as Record<string, unknown>).score === 'number'
+      ) {
+        (parsedAlfred as Record<string, unknown>).confidence_label =
+          scoreToConfidence((parsedAlfred as { score: number }).score);
+      }
+
+      const validated = AlfredResponseSchema.safeParse(parsedAlfred);
+      if (!validated.success) {
+        console.error('[ANALYZE-SETUP] ALFRED response failed schema validation:', validated.error.flatten());
+        throw new Error('ALFRED response failed schema validation');
+      }
+      const result = { ...validated.data, fallback: false };
 
       // Append predicted accuracy from calibration history (null until first trade closes)
       let predicted_accuracy = null;
