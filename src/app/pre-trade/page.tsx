@@ -249,7 +249,10 @@ export default function PreTradePage() {
       const body = mtf_signals ? { ...cleanForm, mtf_signals } : cleanForm;
       const res = await fetch("/api/analyze-setup", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": process.env.NEXT_PUBLIC_INTERNAL_API_KEY ?? "",
+        },
         body: JSON.stringify(body),
       });
       const data = await res.json();
