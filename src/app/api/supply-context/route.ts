@@ -118,6 +118,35 @@ function deriveSupplyBias(
   return 'NEUTRAL';
 }
 
+// Shared core: fetch EIA, derive the four fields, persist to market:context.
+// Throws Error('eia_unavailable') if either feed is unreachable so the caller
+// can decide how to surface the failure (POST returns 200 + error field; the
+// Sunday cron logs and continues without blocking the weekly_bias response).
+export async function fetchAndPersistSupplyContext(
+  kvStore: typeof kv,
+): Promise<void> {
+  const [wstkValues, cushingValues] = await Promise.all([
+    fetchEia(buildWstkUrl()),
+    fetchEia(buildCushingUrl()),
+  ]);
+  if (wstkValues === null || cushingValues === null) {
+    throw new Error('eia_unavailable');
+  }
+  const eia_4wk_trend = deriveEiaTrend(wstkValues);
+  const cushing_vs_4wk = deriveCushingTrend(cushingValues);
+  const rig_count_trend: RigCountTrend = 'FLAT'; // TODO: Baker Hughes scraping
+  const supply_bias = deriveSupplyBias(eia_4wk_trend, cushing_vs_4wk);
+  const supplyContext: SupplyContext = {
+    cushing_vs_4wk,
+    eia_4wk_trend,
+    rig_count_trend,
+    supply_bias,
+    updated_at: new Date().toISOString(),
+  };
+  const ctx = await readContext(kvStore);
+  await writeContext(kvStore, { ...ctx, supply_context: supplyContext });
+}
+
 // GET — cached read. No EIA fetch, no rate-limit risk, safe to call on
 // every page mount. Returns the last-persisted supply_context (or null
 // if the route has never been triggered via POST).

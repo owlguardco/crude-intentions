@@ -21,6 +21,7 @@ import {
   type BiasDirection,
   type BiasStrength,
 } from '@/lib/market-memory/context';
+import { fetchAndPersistSupplyContext } from '@/app/api/supply-context/route';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -185,5 +186,15 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'persist_failed' }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, weekly_bias: brief });
+  // Refresh supply context as part of the same cron run. A failure here
+  // must not block the weekly-bias response from going out.
+  let supply_context_refreshed = false;
+  try {
+    await fetchAndPersistSupplyContext(kv);
+    supply_context_refreshed = true;
+  } catch (err) {
+    console.error('[CRON] Supply context refresh failed:', err);
+  }
+
+  return NextResponse.json({ ok: true, weekly_bias: brief, supply_context_refreshed });
 }
