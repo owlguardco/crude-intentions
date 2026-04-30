@@ -26,6 +26,71 @@ function fmtBriefTime(iso: string): string {
   } catch { return iso; }
 }
 
+function ObserverAlertsWidget() {
+  const [notes, setNotes] = useState<string[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const apiKey = process.env.NEXT_PUBLIC_INTERNAL_API_KEY ?? "";
+        const res = await fetch("/api/journal/observer", {
+          headers: { "x-api-key": apiKey },
+          cache: "no-store",
+        });
+        if (cancelled || !res.ok) return;
+        const json = await res.json();
+        if (Array.isArray(json?.notes)) setNotes(json.notes as string[]);
+      } catch {
+        // hold last-good
+      }
+    };
+    load();
+    const t = setInterval(load, 60_000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, []);
+
+  if (!notes || notes.length === 0) return null;
+
+  const visible = notes.slice(0, 3);
+  const overflow = notes.length - visible.length;
+
+  return (
+    <div style={{ background: "#1a1a1e", border: "1px solid #2a2a2e", borderRadius: 6, padding: 20 }}>
+      <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "3px", color: "#d4a520", marginBottom: 14 }}>
+        OBSERVER ALERTS
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {visible.map((note, i) => (
+          <div
+            key={i}
+            style={{
+              padding: "8px 10px",
+              background: "#d4a52010",
+              border: "1px solid #d4a52030",
+              borderRadius: 4,
+              borderLeft: "3px solid #d4a520",
+              display: "flex",
+              gap: 10,
+              alignItems: "flex-start",
+            }}
+          >
+            <span style={{ color: "#d4a520", fontFamily: "JetBrains Mono, monospace", fontSize: 13, flexShrink: 0 }}>⚠</span>
+            <span style={{ fontFamily: "Inter, sans-serif", fontSize: 12, color: "#e0e0e0", lineHeight: 1.55 }}>
+              {note}
+            </span>
+          </div>
+        ))}
+      </div>
+      {overflow > 0 && (
+        <div style={{ marginTop: 10, fontFamily: "JetBrains Mono, monospace", fontSize: 10, color: "#666670" }}>
+          +{overflow} more — see Calibration tab
+        </div>
+      )}
+    </div>
+  );
+}
+
 function WeeklyBriefWidget() {
   const [brief, setBrief] = useState<WeeklyBriefData | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -271,6 +336,9 @@ export default function DashboardPage() {
 
       {/* Weekly Brief — Sunday cron output, full-width */}
       <WeeklyBriefWidget />
+
+      {/* Observer Alerts — calibration drift / win-rate / factor health notes */}
+      <ObserverAlertsWidget />
 
       {/* Street Pulse — sentiment readout below the market-memory row */}
       <StreetPulseWidget />
