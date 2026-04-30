@@ -173,6 +173,18 @@ export default function SettingsPage() {
   const [scanning, setScanning] = useState(false);
   const [scanToast, setScanToast] = useState<string | null>(null);
 
+  // Weekly brief state
+  type WeeklyBriefValue = {
+    direction: string;
+    strength: string;
+    rationale: string;
+    invalidation: string | null;
+    generated_at: string;
+  };
+  const [weeklyBrief, setWeeklyBrief] = useState<WeeklyBriefValue | null>(null);
+  const [briefRunning, setBriefRunning] = useState(false);
+  const [briefToast, setBriefToast] = useState<string | null>(null);
+
   // Supply-context scan state
   type SupplyContextValue = {
     cushing_vs_4wk: 'BUILDING' | 'DRAWING' | 'FLAT' | null;
@@ -269,6 +281,48 @@ export default function SettingsPage() {
     } finally {
       setScanning(false);
       setTimeout(() => setScanToast(null), 4000);
+    }
+  }
+
+  // Weekly brief — public GET on mount; RUN NOW POSTs with the cron secret
+  const loadBrief = useCallback(async () => {
+    try {
+      const res = await fetch('/api/cron/weekly-brief', { cache: 'no-store' });
+      if (!res.ok) return;
+      const json = await res.json();
+      if (json?.weekly_bias) setWeeklyBrief(json.weekly_bias as WeeklyBriefValue);
+    } catch {
+      // ignore
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => { loadBrief(); }, [loadBrief]);
+
+  async function runBrief() {
+    if (briefRunning) return;
+    setBriefRunning(true);
+    try {
+      const cronSecret = process.env.NEXT_PUBLIC_CRON_SECRET ?? '';
+      const res = await fetch('/api/cron/weekly-brief', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${cronSecret}` },
+      });
+      const json = await res.json();
+      if (!res.ok || json?.error) {
+        setBriefToast(`✗ ${json?.error ?? 'run failed'}`);
+      } else if (json?.weekly_bias) {
+        const wb = json.weekly_bias as WeeklyBriefValue;
+        setWeeklyBrief(wb);
+        setBriefToast(`✓ ${wb.direction} · ${wb.strength}`);
+      } else {
+        setBriefToast('✗ run failed');
+      }
+    } catch {
+      setBriefToast('✗ network');
+    } finally {
+      setBriefRunning(false);
+      setTimeout(() => setBriefToast(null), 4000);
     }
   }
 
@@ -739,6 +793,70 @@ export default function SettingsPage() {
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+      </div>
+
+      {/* ── WEEKLY BRIEF ─────────────────────────────────────────── */}
+      <div style={card}>
+        <div style={{ ...sectionTitle, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span>WEEKLY BRIEF</span>
+          <span style={{ ...mono, fontSize: 9, color: C.dim }}>
+            {weeklyBrief?.generated_at ? `last run ${fmtTime(weeklyBrief.generated_at)}` : 'never run'}
+          </span>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: weeklyBrief ? 14 : 0 }}>
+          <button
+            style={{ ...btn('primary'), opacity: briefRunning ? 0.6 : 1, cursor: briefRunning ? 'not-allowed' : 'pointer' }}
+            onClick={runBrief}
+            disabled={briefRunning}
+          >
+            {briefRunning ? 'RUNNING...' : 'RUN NOW'}
+          </button>
+          {briefToast && (
+            <span style={{ ...mono, fontSize: 10, letterSpacing: '1px', color: briefToast.startsWith('✓') ? C.green : C.red }}>
+              {briefToast}
+            </span>
+          )}
+          <span style={{ ...mono, fontSize: 9, color: C.muted, marginLeft: 'auto' }}>
+            DXY · VIX · OVX · XLE → ALFRED
+          </span>
+        </div>
+
+        {weeklyBrief ? (() => {
+          const dir = weeklyBrief.direction;
+          const dirColor =
+            dir === 'LONG' || dir === 'BULLISH' ? C.green
+            : dir === 'SHORT' || dir === 'BEARISH' ? C.red
+            : C.muted;
+          return (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                <span style={{
+                  ...mono, fontSize: 12, fontWeight: 700, letterSpacing: '2px',
+                  padding: '3px 10px', borderRadius: 3,
+                  color: dirColor, background: `${dirColor}18`, border: `1px solid ${dirColor}40`,
+                }}>{dir}</span>
+                <span style={{ ...mono, fontSize: 11, letterSpacing: '1px', color: C.muted }}>
+                  {weeklyBrief.strength}
+                </span>
+              </div>
+              {weeklyBrief.rationale && (
+                <div style={{ fontFamily: 'Inter, sans-serif', fontSize: 12, color: C.muted, lineHeight: 1.55, marginBottom: weeklyBrief.invalidation ? 12 : 0 }}>
+                  {weeklyBrief.rationale}
+                </div>
+              )}
+              {weeklyBrief.invalidation && (
+                <div style={{ ...mono, fontSize: 10, letterSpacing: '1px', color: C.red }}>
+                  ✗ INVALIDATED IF: <span style={{ fontFamily: 'Inter, sans-serif', letterSpacing: 0 }}>{weeklyBrief.invalidation}</span>
+                </div>
+              )}
+            </>
+          );
+        })() : (
+          <div style={{ ...mono, fontSize: 11, color: C.muted, padding: '12px 0', textAlign: 'center' }}>
+            No brief yet — runs Sunday 20:00 UTC or click RUN NOW
           </div>
         )}
       </div>
