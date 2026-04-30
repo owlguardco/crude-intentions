@@ -44,6 +44,107 @@ function buildCushingUrl(): string {
   );
 }
 
+const BAKER_HUGHES_RSS_URL = 'https://rigcount.bakerhughes.com/static-files/rss-feed';
+const RIG_FETCH_TIMEOUT_MS = 5_000;
+
+async function fetchBakerHughesRigCounts(): Promise<number[] | null> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), RIG_FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(BAKER_HUGHES_RSS_URL, {
+      signal: ctrl.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; CrudeIntentions/1.8)',
+        Accept: 'application/rss+xml, application/xml, text/xml',
+      },
+      cache: 'no-store',
+    });
+    if (!res.ok) return null;
+    const xml = await res.text();
+    return parseRigCountsFromRss(xml);
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Walk RSS <item> blocks, extract a plausible US oil rig total per item.
+// US weekly rig counts run roughly 100-2000; we use that band to filter
+// noise (dates, year-over-year deltas, percentage changes, etc.). Order of
+// items in the feed is most-recent first, so the first two valid hits are
+// "latest" and "prior".
+function parseRigCountsFromRss(xml: string): number[] | null {
+  const itemRe = /<item\b[^>]*>([\s\S]*?)<\/item>/gi;
+  const numRe = /\b([1-9]\d{2,3})\b/g; // 100..9999
+  const counts: number[] = [];
+
+  let m: RegExpExecArray | null;
+  while ((m = itemRe.exec(xml)) !== null && counts.length < 2) {
+    const block = m[1].toLowerCase();
+    // Strip CDATA + tags so the regex sees plain text
+    const stripped = block
+      .replace(/<!\[cdata\[([\s\S]*?)\]\]>/g, '$1')
+      .replace(/<[^>]+>/g, ' ');
+    let best: number | null = null;
+    let nm: RegExpExecArray | null;
+    while ((nm = numRe.exec(stripped)) !== null) {
+      const n = parseInt(nm[1], 10);
+      if (n >= 100 && n <= 2000) {
+        // Prefer the largest plausible number in the block — rig totals tend
+        // to dominate the description; year numbers (e.g. 2025) are filtered
+        // out by the upper bound, percentages and small deltas by the lower.
+        if (best === null || n > best) best = n;
+      }
+    }
+    numRe.lastIndex = 0;
+    if (best !== null) counts.push(best);
+  }
+  return counts.length === 2 ? counts : null;
+}
+
+async function fetchEiaRigCounts(): Promise<number[] | null> {
+  const url =
+    `https://api.eia.gov/v2/drilling/rigs/data/?api_key=${process.env.EIA_API_KEY ?? 'DEMO_KEY'}` +
+    `&frequency=weekly&data[0]=value&sort[0][column]=period&sort[0][direction]=desc&length=3`;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), RIG_FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      signal: ctrl.signal,
+      headers: { Accept: 'application/json' },
+      cache: 'no-store',
+    });
+    if (!res.ok) return null;
+    const json = (await res.json()) as EiaResponse;
+    const rows = json.response?.data ?? [];
+    const values: number[] = [];
+    for (const row of rows) {
+      const v = typeof row.value === 'string' ? parseFloat(row.value) : row.value;
+      if (typeof v === 'number' && Number.isFinite(v)) values.push(v);
+    }
+    return values.length >= 2 ? values.slice(0, 2) : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchRigCountTrend(): Promise<RigCountTrend> {
+  // Baker Hughes RSS first (no API key, public feed). Fall through to EIA
+  // drilling endpoint if RSS fails or returns no parseable values. Either
+  // way, FLAT is the safe default — the supply_bias derivation never reads
+  // rig_count_trend, so a "wrong" FLAT can't propagate to a bad bias.
+  let pair = await fetchBakerHughesRigCounts();
+  if (!pair) pair = await fetchEiaRigCounts();
+  if (!pair || pair.length < 2) return 'FLAT';
+  const [latest, prior] = pair;
+  if (latest > prior) return 'RISING';
+  if (latest < prior) return 'FALLING';
+  return 'FLAT';
+}
+
 interface EiaResponse {
   response?: {
     data?: Array<{ period?: string; value?: number | string }>;
@@ -134,7 +235,7 @@ export async function fetchAndPersistSupplyContext(
   }
   const eia_4wk_trend = deriveEiaTrend(wstkValues);
   const cushing_vs_4wk = deriveCushingTrend(cushingValues);
-  const rig_count_trend: RigCountTrend = 'FLAT'; // TODO: Baker Hughes scraping
+  const rig_count_trend = await fetchRigCountTrend();
   const supply_bias = deriveSupplyBias(eia_4wk_trend, cushing_vs_4wk);
   const supplyContext: SupplyContext = {
     cushing_vs_4wk,
@@ -191,7 +292,7 @@ export async function POST(req: NextRequest) {
 
   const eia_4wk_trend = deriveEiaTrend(wstkValues);
   const cushing_vs_4wk = deriveCushingTrend(cushingValues);
-  const rig_count_trend: RigCountTrend = 'FLAT'; // TODO: Baker Hughes scraping
+  const rig_count_trend = await fetchRigCountTrend();
   const supply_bias = deriveSupplyBias(eia_4wk_trend, cushing_vs_4wk);
 
   const supplyContext: SupplyContext = {
