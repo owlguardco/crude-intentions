@@ -186,7 +186,10 @@ export default function PreTradePage() {
     let cancelled = false;
     (async () => {
       try {
+        // GET = cached read of market:context.supply_context (no EIA fetch).
+        // The fresh fetch is POST /api/supply-context, fired from settings.
         const res = await fetch("/api/supply-context", {
+          method: "GET",
           headers: { "x-api-key": process.env.NEXT_PUBLIC_INTERNAL_API_KEY ?? "" },
         });
         if (!res.ok) return;

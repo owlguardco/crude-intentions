@@ -27,16 +27,22 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY;
-const EIA_KEY = process.env.EIA_API_KEY ?? 'DEMO_KEY';
-
 const FETCH_TIMEOUT_MS = 10_000;
 
-const WSTK_URL =
-  `https://api.eia.gov/v2/petroleum/stoc/wstk/data/?api_key=${EIA_KEY}` +
-  `&frequency=weekly&data[0]=value&sort[0][column]=period&sort[0][direction]=desc&length=5`;
-const CUSHING_URL =
-  `https://api.eia.gov/v2/petroleum/stoc/cushing/data/?api_key=${EIA_KEY}` +
-  `&frequency=weekly&data[0]=value&sort[0][column]=period&sort[0][direction]=desc&length=5`;
+// URLs built per-call so a fresh process.env.EIA_API_KEY value (e.g. swapped
+// in Vercel between deploys) is picked up without redeploying this file.
+function buildWstkUrl(): string {
+  return (
+    `https://api.eia.gov/v2/petroleum/stoc/wstk/data/?api_key=${process.env.EIA_API_KEY ?? 'DEMO_KEY'}` +
+    `&frequency=weekly&data[0]=value&sort[0][column]=period&sort[0][direction]=desc&length=5`
+  );
+}
+function buildCushingUrl(): string {
+  return (
+    `https://api.eia.gov/v2/petroleum/stoc/cushing/data/?api_key=${process.env.EIA_API_KEY ?? 'DEMO_KEY'}` +
+    `&frequency=weekly&data[0]=value&sort[0][column]=period&sort[0][direction]=desc&length=5`
+  );
+}
 
 interface EiaResponse {
   response?: {
@@ -112,14 +118,33 @@ function deriveSupplyBias(
   return 'NEUTRAL';
 }
 
+// GET — cached read. No EIA fetch, no rate-limit risk, safe to call on
+// every page mount. Returns the last-persisted supply_context (or null
+// if the route has never been triggered via POST).
 export async function GET(req: NextRequest) {
+  if (!isAuthorised(req)) {
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  }
+  try {
+    const ctx = await readContext(kv);
+    return NextResponse.json({ supply_context: ctx.supply_context ?? null });
+  } catch (err) {
+    console.error('[SUPPLY-CONTEXT] read failed', err);
+    return NextResponse.json({ supply_context: null });
+  }
+}
+
+// POST — fresh fetch. Hits EIA, derives the four fields, persists to
+// market:context, returns the computed shape plus raw values. Use from
+// settings page or a cron, not from page mounts.
+export async function POST(req: NextRequest) {
   if (!isAuthorised(req)) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 
   const [wstkValues, cushingValues] = await Promise.all([
-    fetchEia(WSTK_URL),
-    fetchEia(CUSHING_URL),
+    fetchEia(buildWstkUrl()),
+    fetchEia(buildCushingUrl()),
   ]);
 
   if (wstkValues === null || cushingValues === null) {
@@ -148,7 +173,6 @@ export async function GET(req: NextRequest) {
     updated_at: new Date().toISOString(),
   };
 
-  // Persist to market:context — additive, never overwrites existing fields
   try {
     const ctx = await readContext(kv);
     await writeContext(kv, { ...ctx, supply_context: supplyContext });
