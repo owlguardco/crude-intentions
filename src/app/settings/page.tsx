@@ -303,10 +303,11 @@ export default function SettingsPage() {
     if (briefRunning) return;
     setBriefRunning(true);
     try {
-      const cronSecret = process.env.NEXT_PUBLIC_CRON_SECRET ?? '';
-      const res = await fetch('/api/cron/weekly-brief', {
+      // Server-side proxy holds CRON_SECRET; client only ships
+      // INTERNAL_API_KEY (already client-safe via NEXT_PUBLIC_INTERNAL_API_KEY).
+      const res = await fetch('/api/cron/weekly-brief/trigger', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${cronSecret}` },
+        headers: authHeaders(),
       });
       const json = await res.json();
       if (!res.ok || json?.error) {
