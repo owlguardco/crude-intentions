@@ -13,9 +13,12 @@ import {
   updateContextFromOutcome,
   type ClosedTradeForContext,
 } from '@/lib/market-memory/context';
+import { safeEq } from '@/lib/auth/safe-compare';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY;
 
 const ClosePatchSchema = z.object({
   close_price: z.number().finite().min(10).max(500),
@@ -43,6 +46,14 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  if (!INTERNAL_API_KEY) {
+    return NextResponse.json({ error: 'INTERNAL_API_KEY not configured' }, { status: 500 });
+  }
+  const auth = req.headers.get('x-api-key');
+  if (!auth || !safeEq(auth, INTERNAL_API_KEY)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const { id } = await params;
 
   let body: unknown;
