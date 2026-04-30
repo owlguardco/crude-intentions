@@ -95,7 +95,7 @@ Layer 2 [4H Momentum — 2 pts]:
   4. volume_confirmed: 15-min trigger candle volume >= 20-bar session average — institutional participation present
 
 Layer 3 [Structure — 2 pts]:
-  5. price_at_key_level: Price inside 4H FVG or at 4H EMA20
+  5. price_at_key_level: FVG structural entry — unfilled 4H FVG exists and price is inside it or within 0.10 of its edge. FVG must be unmitigated and under 75 bars old. EMA20/round-level proximity boost quality but do NOT alone pass this point.
   6. rr_valid: 2:1 minimum R/R to TP1 with stop at 15min structural level
 
 Layer 4 [HTF Context — 2 pts]:
@@ -136,6 +136,17 @@ OVX REGIME RULES:
 - PASS: OVX 20-35 — clean regime
 - CONDITIONAL: OVX 35-50 — elevated, size down
 - FAIL: OVX above 50 (hard block) or below 20 (choppy)
+
+FVG SCORING RULES (item 5, price_at_key_level):
+- PASS: price inside the 4H FVG or within 0.10 of the relevant edge (top of bullish FVG for longs, bottom of bearish FVG for shorts), gap unmitigated, FVG age < 75 bars
+- CONDITIONAL: price within 0.20 of the FVG edge — approaching, note as such, do NOT auto-fail (item 5 only emits PASS or FAIL — treat CONDITIONAL as FAIL with "approaching" detail)
+- FAIL: no FVG within 0.30 of price, OR FVG is 75+ bars old, OR FVG midpoint already breached (mitigated)
+- Quality boosters (mention in detail string only — do NOT change PASS/FAIL):
+    * FVG + 4H EMA20 within 0.15 = "high conviction zone"
+    * FVG + round dollar level within 0.10 = "institutional confluence"
+    * FVG age < 25 bars = "fresh gap"
+    * FVG size > 0.30 = "large imbalance"
+- EMA20 alone, round level alone, or VWAP alone are NOT sufficient to pass item 5. FVG is the required structural condition.
 
 Output ONLY valid JSON. No preamble, no markdown fences.
 

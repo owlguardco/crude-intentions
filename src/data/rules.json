@@ -72,7 +72,7 @@
       "_timeframe": "4H",
       "checks": [
         "4H EMA stack aligned — EMA20/50/200 intermediate trend confirms daily bias",
-        "Price inside a mapped 4H setup zone — at EMA20, inside an unfilled FVG, or at VWAP confluence"
+        "Unfilled 4H FVG present — price inside the gap or within 0.10 of its edge. FVG must be unmitigated and under 75 bars old. EMA20 and round level confluence boost quality but are not required to pass."
       ]
     },
     "layer_3_momentum": {
@@ -114,6 +114,25 @@
     "total_points": 12,
     "countertrend_minimum": 11,
     "eia_hard_block": "EIA window (Wednesday 7:30 AM–1:30 PM ET) overrides the checklist. 12/12 during EIA = NO TRADE."
+  },
+  "fvg_rules": {
+    "_description": "Layer 2 Point 2 makes FVG the structural-entry requirement. EMA20 and round-level proximity become quality boosters, not standalone pass conditions.",
+    "entry_conditions": [
+      "PASS requires price within 0.10 of FVG edge or inside the gap",
+      "CONDITIONAL: price within 0.20 of FVG edge — approaching",
+      "FAIL: no FVG within 0.30, or FVG is 75+ bars old, or FVG midpoint already breached",
+      "Quality boosters: FVG + EMA20 within 0.15 = high conviction. FVG + round level within 0.10 = institutional confluence. FVG under 25 bars = fresh gap priority."
+    ],
+    "thresholds": {
+      "pass_proximity": 0.10,
+      "conditional_proximity": 0.20,
+      "fail_proximity": 0.30,
+      "max_age_bars": 75,
+      "fresh_age_bars": 25,
+      "ema20_confluence": 0.15,
+      "round_level_confluence": 0.10,
+      "large_gap_size": 0.30
+    }
   },
   "indicators": {
     "overnight_range": {

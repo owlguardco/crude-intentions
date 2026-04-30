@@ -23,10 +23,11 @@ Three-timeframe architecture: Daily/Weekly (macro bias) → 4H (setup zone) → 
 MINIMUM TO TRADE: 9/12. COUNTERTREND MINIMUM: 11/12.
 Layer 1 [Daily/Weekly 2pts]: ema_stack_aligned, daily_confirms
 Layer 2 [4H Momentum 2pts]: rsi_reset_zone (35-55 longs 45-65 shorts), volume_confirmed (15min trigger candle volume >= 20-bar avg)
-Layer 3 [Structure 2pts]: price_at_key_level (inside 4H FVG or EMA20), rr_valid (2:1 min)
+Layer 3 [Structure 2pts]: price_at_key_level (UNFILLED 4H FVG REQUIRED — price inside gap or within 0.10 of edge, FVG <75 bars, midpoint not breached. EMA20/round-level proximity = quality boosters only, NOT standalone pass conditions), rr_valid (2:1 min)
 Layer 4 [HTF Context 2pts]: session_timing (NY Open 9:30-11:45 ET), eia_window_clear
 Layer 5 [15min Trigger 2pts]: vwap_aligned, htf_structure_clear
 Layer 6 [Session Context 2pts]: overnight_range_position (price above Asia high LONGS / below Asia low SHORTS), ovx_regime (OVX 20-35 PASS, 35-50 CONDITIONAL, >50 or <20 FAIL)
+FVG RULES (item 5): PASS = inside FVG or within 0.10 of edge. FAIL = no FVG within 0.30, or 75+ bars old, or midpoint breached. Quality boosters (detail only, no PASS/FAIL change): FVG+EMA20<0.15="high conviction", FVG+round level<0.10="institutional confluence", age<25="fresh gap", size>0.30="large imbalance".
 HARD BLOCKS: EIA window active, OVX > 50
 GRADING: 12=A+ CONVICTION, 10-11=A HIGH, 9=B+ MEDIUM, 7-8=B NO TRADE, 0-6=F NO TRADE
 Items 1-10 emit PASS or FAIL only. Items 11-12 may also emit CONDITIONAL or N/A.
@@ -107,6 +108,7 @@ function signalToFallbackInput(s: WebhookSignal): FallbackScorerInput {
     price: s.price, ema20: s.ema20, ema50: s.ema50, ema200: s.ema200,
     rsi: s.rsi, trigger_volume: s.trigger_volume, avg_volume: s.avg_volume, vwap: s.vwap, ovx: s.ovx,
     dxy, fvg_direction: fvgDir, fvg_top: s.fvg_top, fvg_bottom: s.fvg_bottom,
+    fvg_age_bars: s.fvg_age,
     session: s.session, weekly_bias: wb, eia_active: s.eia_active,
     asia_high: s.asia_high, asia_low: s.asia_low,
   };
@@ -116,13 +118,14 @@ async function runALFRED(signal: WebhookSignal): Promise<AlfredResult> {
   const marketContext = await readContext(kv);
   const marketMemorySection = buildMarketMemoryPromptSection(marketContext);
 
-  const prompt = `Analyze this CL setup against v1.8 checklist:
+  const prompt = `Analyze this CL setup against v1.9 checklist:
 Direction: ${signal.direction} | Price: ${signal.price}
 EMA20: ${signal.ema20} EMA50: ${signal.ema50} EMA200: ${signal.ema200}
 RSI: ${signal.rsi} | Trigger Vol: ${signal.trigger_volume ?? 'N/A'} | Avg Vol (20-bar): ${signal.avg_volume ?? 'N/A'} | VWAP: ${signal.vwap ?? 'N/A'}
 OVX: ${signal.ovx} | DXY: ${signal.dxy}
-FVG: ${signal.fvg_direction} ${signal.fvg_bottom}-${signal.fvg_top}
+FVG: ${signal.fvg_direction} ${signal.fvg_bottom}-${signal.fvg_top} | Age: ${signal.fvg_age ?? 'N/A'} bars
 Session: ${signal.session} | Weekly bias: ${signal.weekly_bias ?? 'not set'}
+Asia High: ${signal.asia_high ?? 'N/A'} | Asia Low: ${signal.asia_low ?? 'N/A'}
 EIA active: ${signal.eia_active ? 'YES HARD BLOCK' : 'NO'}
 Return JSON only.`;
 

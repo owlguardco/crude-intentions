@@ -150,6 +150,12 @@ export default function JournalPage() {
       ] as const;
       const out: Record<string, { result: "FAIL" | "N/A"; detail: string }> = {};
       for (const k of binaryKeys) out[k] = { result: "FAIL", detail: "Imported via guided wizard - not evaluated" };
+      // FVG structural entry — Layer 2 Point 2. Reframed in v1.9 to require
+      // an unfilled 4H FVG; EMA20 + round level become quality boosters only.
+      out.price_at_key_level = {
+        result: "FAIL",
+        detail: "FVG structural entry — unfilled 4H FVG, price inside or within 0.10 of edge (not evaluated in guided import)",
+      };
       out.overnight_range_position = { result: "N/A", detail: "Not evaluated in guided import" };
       out.ovx_regime = { result: "N/A", detail: "Not evaluated in guided import" };
       return out;

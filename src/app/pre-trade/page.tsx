@@ -408,7 +408,10 @@ export default function PreTradePage() {
         </div>
 
         <div style={{ borderTop: "1px solid #2a2a2e", paddingTop: 16 }}>
-          <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "3px", color: "#666670", marginBottom: 12 }}>FVG DATA</div>
+          <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "3px", color: "#666670", marginBottom: 6 }}>FVG DATA</div>
+          <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, color: "#888", marginBottom: 12, lineHeight: 1.5 }}>
+            Required for Layer 2 structural entry point. EMA20 and round level proximity boost quality score but cannot pass this point alone.
+          </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div>
               <label style={labelStyle}>FVG DIRECTION</label>

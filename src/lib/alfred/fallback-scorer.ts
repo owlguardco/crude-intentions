@@ -29,6 +29,7 @@ export interface FallbackScorerInput {
   fvg_direction: 'bullish' | 'bearish' | 'none';
   fvg_top?: number;
   fvg_bottom?: number;
+  fvg_age_bars?: number;
   session: 'NY_OPEN' | 'NY_AFTERNOON' | 'LONDON' | 'OVERLAP' | 'ASIA' | 'OFF_HOURS';
   weekly_bias: 'LONG' | 'SHORT' | 'NEUTRAL';
   eia_active: boolean;
@@ -67,7 +68,18 @@ const OVX_REGIME_LOW           = 20;
 const OVX_REGIME_PASS_HIGH     = 35;
 const OVX_REGIME_CONDITIONAL_HIGH = 50;
 const OVERNIGHT_RANGE_PROXIMITY = 0.15;
-const EMA20_PROXIMITY_PCT      = 0.003; // 0.3%
+const EMA20_PROXIMITY_PCT      = 0.003; // 0.3% — legacy, not used for item 5
+
+// Layer 3 / item 5 (price_at_key_level) — FVG is the required structural condition.
+// EMA20 / round-level / large-gap appear only as quality boosters in the detail string.
+const FVG_PASS_PROXIMITY        = 0.10; // price within $0.10 of relevant edge OR inside the gap
+const FVG_CONDITIONAL_PROXIMITY = 0.20; // approaching — emitted as FAIL with "approaching" note
+const FVG_FAIL_PROXIMITY        = 0.30; // farther than this = no FVG context at all
+const FVG_MAX_AGE_BARS          = 75;
+const FVG_FRESH_AGE_BARS        = 25;
+const FVG_EMA20_CONFLUENCE      = 0.15;
+const FVG_ROUND_LEVEL_BAND      = 0.10;
+const FVG_LARGE_GAP_SIZE        = 0.30;
 const FALLBACK_DISCLAIMER =
   'AI scoring unavailable — deterministic fallback used. Treat as a sanity check, not a full ALFRED analysis.';
 
@@ -111,18 +123,60 @@ export function runFallbackScorer(input: FallbackScorerInput): FallbackScorerRes
   const volumeConfirmed = volumeRatio !== null && volumeRatio >= 1.0;
 
   // ── Layer 3: Structure (2 pts) ──────────────────────────────────────────
+  // v1.9 FVG-required: item 5 (price_at_key_level) only PASSes when an
+  // unfilled, fresh-enough 4H FVG exists AND price is inside the gap or
+  // within $0.10 of the relevant edge. EMA20 / round level proximity and
+  // gap freshness/size become quality boosters — surfaced in the detail
+  // string but never standalone pass conditions.
   const fvgDirMatches =
     (dir === 'LONG'  && input.fvg_direction === 'bullish') ||
     (dir === 'SHORT' && input.fvg_direction === 'bearish');
+  const fvgTop = input.fvg_top;
+  const fvgBottom = input.fvg_bottom;
+  const fvgAge = input.fvg_age_bars;
+  const haveFvg =
+    fvgDirMatches && typeof fvgTop === 'number' && typeof fvgBottom === 'number';
+  const fvgUnmitigated =
+    haveFvg && typeof fvgAge === 'number' ? fvgAge < FVG_MAX_AGE_BARS : haveFvg;
+  // Midpoint-breached check: for a bullish FVG, price below the midpoint
+  // means buyers already overran the gap; mirror for bearish.
+  const fvgMidpoint = haveFvg ? ((fvgTop! + fvgBottom!) / 2) : null;
+  const fvgMidpointBreached =
+    haveFvg && fvgMidpoint !== null
+      ? (dir === 'LONG' ? input.price < fvgMidpoint : input.price > fvgMidpoint) &&
+        !(input.price >= fvgBottom! && input.price <= fvgTop!)
+      : false;
   const insideFvg =
-    fvgDirMatches &&
-    typeof input.fvg_top === 'number' &&
-    typeof input.fvg_bottom === 'number' &&
-    input.price >= input.fvg_bottom &&
-    input.price <= input.fvg_top;
-  const nearEma20 =
-    Math.abs(input.price - input.ema20) / input.ema20 <= EMA20_PROXIMITY_PCT;
-  const priceAtKeyLevel = insideFvg || (input.fvg_direction === 'none' && nearEma20);
+    haveFvg && input.price >= fvgBottom! && input.price <= fvgTop!;
+  // Distance from the relevant edge (top for longs, bottom for shorts).
+  const fvgEdgeDistance = haveFvg
+    ? dir === 'LONG'
+      ? Math.abs(input.price - fvgTop!)
+      : Math.abs(input.price - fvgBottom!)
+    : Infinity;
+  const fvgWithinPass =
+    haveFvg && fvgUnmitigated && !fvgMidpointBreached &&
+    (insideFvg || fvgEdgeDistance <= FVG_PASS_PROXIMITY);
+  const fvgWithinConditional =
+    haveFvg && fvgUnmitigated && !fvgMidpointBreached &&
+    !fvgWithinPass &&
+    fvgEdgeDistance <= FVG_CONDITIONAL_PROXIMITY;
+  const priceAtKeyLevel = fvgWithinPass;
+  // Quality boosters — detail-only, do not change PASS/FAIL.
+  const ema20Confluence =
+    haveFvg && Math.abs(input.price - input.ema20) <= FVG_EMA20_CONFLUENCE;
+  const nearestRoundDollar = Math.round(input.price);
+  const roundLevelConfluence =
+    haveFvg && Math.abs(input.price - nearestRoundDollar) <= FVG_ROUND_LEVEL_BAND;
+  const freshGap =
+    haveFvg && typeof fvgAge === 'number' && fvgAge < FVG_FRESH_AGE_BARS;
+  const largeGap =
+    haveFvg && (fvgTop! - fvgBottom!) > FVG_LARGE_GAP_SIZE;
+  const qualityBoosters: string[] = [];
+  if (ema20Confluence)     qualityBoosters.push('EMA20 confluence');
+  if (roundLevelConfluence) qualityBoosters.push('round level confluence');
+  if (freshGap)            qualityBoosters.push('fresh gap');
+  if (largeGap)            qualityBoosters.push('large gap');
   // R/R can't be derived without stop/target — default pass unless EIA window
   const rrValid = !input.eia_active;
 
@@ -175,11 +229,31 @@ export function runFallbackScorer(input: FallbackScorerInput): FallbackScorerRes
     {
       label: 'Price at Key Level',
       result: priceAtKeyLevel ? 'PASS' : 'FAIL',
-      detail: insideFvg
-        ? `Price ${input.price} inside ${input.fvg_direction} FVG (${input.fvg_bottom}-${input.fvg_top})`
-        : nearEma20
-          ? `Price ${input.price} within 0.3% of EMA20 ${input.ema20}`
-          : `Price ${input.price} not at FVG or EMA20`,
+      detail: (() => {
+        if (!haveFvg) {
+          return `No matching ${dir === 'LONG' ? 'bullish' : 'bearish'} 4H FVG provided — FVG required for Layer 2 structural entry`;
+        }
+        if (!fvgUnmitigated) {
+          return `4H FVG (${fvgBottom}-${fvgTop}) is ${fvgAge} bars old — over ${FVG_MAX_AGE_BARS} bar staleness limit`;
+        }
+        if (fvgMidpointBreached) {
+          return `Price ${input.price} traded through ${input.fvg_direction} FVG midpoint (${fvgMidpoint?.toFixed(2)}) — gap mitigated`;
+        }
+        const boosters = qualityBoosters.length ? ` [${qualityBoosters.join(', ')}]` : '';
+        if (insideFvg) {
+          return `Price ${input.price} inside ${input.fvg_direction} FVG (${fvgBottom}-${fvgTop})${boosters}`;
+        }
+        if (fvgWithinPass) {
+          return `Price ${input.price} within ${FVG_PASS_PROXIMITY} of ${input.fvg_direction} FVG edge (${dir === 'LONG' ? `top ${fvgTop}` : `bottom ${fvgBottom}`})${boosters}`;
+        }
+        if (fvgWithinConditional) {
+          return `Price ${input.price} within ${FVG_CONDITIONAL_PROXIMITY} of FVG edge — approaching but not yet at structural entry${boosters}`;
+        }
+        if (fvgEdgeDistance <= FVG_FAIL_PROXIMITY) {
+          return `Price ${input.price} ${fvgEdgeDistance.toFixed(2)} from FVG edge — outside ${FVG_PASS_PROXIMITY} pass band`;
+        }
+        return `Price ${input.price} more than ${FVG_FAIL_PROXIMITY} from nearest FVG edge — no structural FVG entry`;
+      })(),
     },
     {
       label: 'R/R Valid',
@@ -324,7 +398,7 @@ export function runFallbackScorer(input: FallbackScorerInput): FallbackScorerRes
       : `[FALLBACK] Score ${score}/12 (${grade}) — ${decision} ${isCountertrend ? '(countertrend, 11+ required) ' : ''}` +
         `meets minimum threshold. EMA stack ${stackAligned ? 'aligned' : 'unaligned'}, ` +
         `RSI ${input.rsi} ${rsiInZone ? 'in' : 'outside'} reset zone, ` +
-        `${insideFvg ? 'inside FVG' : nearEma20 ? 'near EMA20' : 'no key-level confluence'}. ` +
+        `${insideFvg ? 'inside FVG' : fvgWithinPass ? 'at FVG edge' : 'no FVG structural entry'}. ` +
         `Anthropic API unreachable — this is a deterministic fallback, not full ALFRED analysis.`;
 
   return {
