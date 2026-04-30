@@ -235,14 +235,22 @@ export function recalculateCalibration(entries: CalibrationEntry[]): Calibration
     bucket.wilson_ci = wilsonCi(bucket.wins, bucket.trades);
   }
 
-  // by_factor — pass vs fail edge breakdown
+  // by_factor — pass vs fail edge breakdown.
+  // Includes historical (backtest-imported) entries unlike by_grade /
+  // by_session / by_confidence above. Those cohort buckets stay clean
+  // because the backtest engine stamps every entry as grade=F /
+  // session=NY_OPEN / confidence=MEDIUM, which would pollute the
+  // stratification panels. Factor checklists, by contrast, carry real
+  // PASS/FAIL signal even from the synthetic ATR-walked backtest, so
+  // the edge breakdown is meaningful pre-live and surfaces the
+  // BACKTEST BASELINE the dashboard banner already advertises.
   const by_factor = {} as Record<FactorKey, FactorBreakdown>;
   for (const key of FACTOR_KEYS) {
     let passT = 0,
       passW = 0,
       failT = 0,
       failW = 0;
-    for (const entry of cohortClosed) {
+    for (const entry of closed) {
       const item = entry.checklist?.[key];
       const passed = item?.result === 'PASS';
       const isWin = entry.outcome.status === 'WIN';
