@@ -1,161 +1,198 @@
-# Pine Script — Close Alert Setup
-
-This document specifies how to wire TradingView Pine Script close alerts into the
-CRUDE INTENTIONS A+B auto-outcome system. The close alert tells the dashboard
-when an open trade has hit TP1, TP2, or its protective stop, so journal entries
-auto-resolve into WIN / LOSS / SCRATCH without manual logging.
+# PINE SCRIPT CLOSE ALERT — Crude Intentions
+### File: docs/PINE_SCRIPT_CLOSE_ALERT.md
+### Purpose: Wire TradingView close alerts so trades auto-resolve in the journal
 
 ---
 
-## Webhook URL
+## Overview
 
-Point the TradingView alert at the Railway proxy (which forwards to the Vercel
-deployment):
+Without close alerts, every trade requires you to manually click LOG OUTCOME.
+With this wired up, TradingView fires the close alert automatically when:
+- TP1 is hit (LONG or SHORT)
+- Stop is hit (LONG or SHORT)
 
-```
-https://<railway-app>.up.railway.app/webhook-close
-```
-
-If you are testing directly against Vercel:
-
-```
-https://<vercel-deployment>/api/webhook-close
-```
-
-> **Auth fallback for TradingView.** TradingView does NOT support outbound HMAC
-> signing. Append a query param secret instead:
->
-> ```
-> https://<host>/webhook-close?secret=YOUR_WEBHOOK_SECRET
-> ```
->
-> The route accepts either an `x-signature` HMAC-SHA256 header (for non-TV
-> callers like NinjaTrader) **or** a `?secret=` query param matching
-> `WEBHOOK_SECRET`. Use one or the other.
+The webhook router at Railway inspects the `close_reason` field and routes to
+`/api/webhook-close`, which closes the journal entry, recalculates calibration,
+updates market memory, and fires the post-mortem — all automatically.
 
 ---
 
-## Storing `signal_id` in Pine Script
+## Step 1 — Add close conditions to your existing Pine Script
 
-The dashboard matches close alerts to open journal entries by `signal_id`, which
-is the same ID returned when the entry alert fires (`CI-YYYY-MM-DD-NNN`).
+Open your existing CL1! 15-minute Pine Script alert script in the TradingView
+Pine Script editor. Add the following close logic beneath your existing entry
+signal logic.
 
-In Pine Script, persist the open trade's id in a `var` and pass it to
-`strategy.entry()` / `strategy.order()` via `comment=`. TradingView will then
-expose it in close alerts as `{{strategy.order.comment}}`.
+```pine
+// ─────────────────────────────────────────────────────────────────────────────
+// CLOSE ALERT CONDITIONS — add below your existing entry signal code
+// ─────────────────────────────────────────────────────────────────────────────
 
-```pinescript
-//@version=5
-strategy("CL A+ Strategy", overlay=true)
+// These inputs mirror your entry signal — fill in the same values you use there
+tp1_long  = input.float(0.0, title="TP1 LONG price", step=0.01)
+tp1_short = input.float(0.0, title="TP1 SHORT price", step=0.01)
+stop_long  = input.float(0.0, title="Stop LONG price", step=0.01)
+stop_short = input.float(0.0, title="Stop SHORT price", step=0.01)
 
-// Persist the active signal_id across bars
-var string activeSignalId = na
+// Or — if your signals store entry/stop/TP in variables already, reference those
+// tp1_long  = entryPrice + (rr_target * stopDistance)   // example if you calc inline
 
-// On entry — populate signal_id from the entry webhook response or
-// pre-generate it locally and POST it to /webhook-signal first.
-if (longCondition)
-    activeSignalId := "CI-" + str.format_time(time, "yyyy-MM-dd") + "-001"
-    strategy.entry("LONG", strategy.long, comment=activeSignalId)
+// Detect close conditions on bar close
+tp1_long_hit   = close >= tp1_long  and tp1_long  > 0
+tp1_short_hit  = close <= tp1_short and tp1_short > 0
+stop_long_hit  = close <= stop_long  and stop_long  > 0
+stop_short_hit = close >= stop_short and stop_short > 0
 
-// Define TP1 / Stop levels relative to entry
-tp1 = strategy.position_avg_price + 2 * (strategy.position_avg_price - stopPrice)
-stop = stopPrice
-
-// Exits — comment carries the signal_id forward to the close alert
-strategy.exit("TP1", from_entry="LONG", limit=tp1, stop=stop,
-              comment_profit="TP1_HIT", comment_loss="STOPPED_OUT")
+// Alert conditions — one alert object per condition
+alertcondition(tp1_long_hit,   title="CI — TP1 Hit LONG",    message="TP1_LONG_HIT")
+alertcondition(tp1_short_hit,  title="CI — TP1 Hit SHORT",   message="TP1_SHORT_HIT")
+alertcondition(stop_long_hit,  title="CI — Stop Hit LONG",   message="STOP_LONG_HIT")
+alertcondition(stop_short_hit, title="CI — Stop Hit SHORT",  message="STOP_SHORT_HIT")
 ```
 
-Notes:
-
-- `comment_profit` / `comment_loss` on `strategy.exit` does NOT propagate the
-  `signal_id`. Use a separate `alert()` call inside the exit-condition block,
-  or use `strategy.order.comment` in the alert message template.
-- Easiest pattern: set the `comment` on entry to the `signal_id`, then the
-  close alert's `{{strategy.order.comment}}` resolves to that same id.
+> **Note:** If your script already tracks position state (e.g. `strategy.position_size`),
+> you can use `strategy.closedtrades` events instead of price-level comparisons.
+> The payload format below works regardless of detection method.
 
 ---
 
-## Alert Conditions
+## Step 2 — Create four alerts in TradingView
 
-Fire the close alert when any of the following occur:
+In TradingView: **Alerts → Create Alert**. Repeat for each of the four conditions.
 
-| Direction | Condition                              | `close_reason` |
-| --------- | -------------------------------------- | -------------- |
-| LONG      | `close >= tp1_price`                   | `TP1_HIT`      |
-| LONG      | `close <= stop_price`                  | `STOPPED_OUT`  |
-| SHORT     | `close <= tp1_price`                   | `TP1_HIT`      |
-| SHORT     | `close >= stop_price`                  | `STOPPED_OUT`  |
+### Alert settings (same for all four):
 
-If the strategy supports a TP2 leg, fire a second alert with `TP2_HIT` when
-`close >= tp2_price` (LONG) or `close <= tp2_price` (SHORT).
+| Field | Value |
+|-------|-------|
+| Condition | Select your script, then the matching alertcondition |
+| Trigger | Once Per Bar Close |
+| Expiration | Open-ended |
+| Webhook URL | `https://web-production-078a.up.railway.app/api/webhook?secret=YOUR_WEBHOOK_SECRET` |
+| Message | See payload below — one per alert |
 
-For breakeven exits (manual or rule-based), use `BREAKEVEN`. For any operator
-override, use `MANUAL`.
+### Alert message payloads
 
----
-
-## Alert JSON Payload
-
-In the TradingView alert dialog, set **Message** to the JSON below. TradingView
-will substitute the `{{...}}` placeholders at fire time.
-
+**Alert 1 — TP1 Hit LONG:**
 ```json
 {
-  "signal_id": "{{strategy.order.comment}}",
-  "close_price": {{close}},
-  "close_reason": "TP1_HIT",
-  "ticks_pnl": 0
+  "close_reason": "tp1",
+  "direction": "LONG",
+  "exit_price": {{close}},
+  "signal_id": "{{strategy.order.id}}",
+  "ticker": "{{ticker}}",
+  "timestamp": "{{timenow}}"
 }
 ```
 
-Field reference:
-
-- `signal_id` — required. Must match an OPEN journal entry id.
-- `close_price` — required. The fill price on the bar that triggered the alert.
-- `close_reason` — required. One of `TP1_HIT`, `TP2_HIT`, `STOPPED_OUT`,
-  `BREAKEVEN`, `MANUAL`.
-- `ticks_pnl` — optional. If omitted, the server computes it from
-  `close_price` vs the journal entry's `entry_price` using the standard CL
-  contract tick of $0.01 (×100 ticks per dollar).
-
-You will need **one alert per close reason** (TradingView does not support
-conditional payloads). Create:
-
-1. `LONG TP1_HIT` — fires on `close >= tp1_price` while `direction == LONG`
-2. `LONG STOPPED_OUT` — fires on `close <= stop_price` while `direction == LONG`
-3. `SHORT TP1_HIT` — fires on `close <= tp1_price` while `direction == SHORT`
-4. `SHORT STOPPED_OUT` — fires on `close >= stop_price` while `direction == SHORT`
-
-Each alert hard-codes its `close_reason` in the JSON message body.
-
----
-
-## Server Response
-
-On success the route returns:
-
+**Alert 2 — TP1 Hit SHORT:**
 ```json
-{ "ok": true, "signal_id": "CI-2026-04-28-007", "outcome": "WIN" }
+{
+  "close_reason": "tp1",
+  "direction": "SHORT",
+  "exit_price": {{close}},
+  "signal_id": "{{strategy.order.id}}",
+  "ticker": "{{ticker}}",
+  "timestamp": "{{timenow}}"
+}
 ```
 
-Possible error responses:
+**Alert 3 — Stopped Out LONG:**
+```json
+{
+  "close_reason": "stop",
+  "direction": "LONG",
+  "exit_price": {{close}},
+  "signal_id": "{{strategy.order.id}}",
+  "ticker": "{{ticker}}",
+  "timestamp": "{{timenow}}"
+}
+```
 
-- `401` — bad or missing secret / signature.
-- `404` — no journal entry matches `signal_id`.
-- `409` — entry was already closed (idempotent rejection).
-- `400` — invalid JSON or schema-violating payload.
+**Alert 4 — Stopped Out SHORT:**
+```json
+{
+  "close_reason": "stop",
+  "direction": "SHORT",
+  "exit_price": {{close}},
+  "signal_id": "{{strategy.order.id}}",
+  "ticker": "{{ticker}}",
+  "timestamp": "{{timenow}}"
+}
+```
+
+> `{{strategy.order.id}}` only populates inside a `strategy()` script. If you're
+> using an `indicator()` script, replace with a hardcoded placeholder like
+> `"manual"` for now — the webhook-close route will match on the most recent
+> open journal entry if signal_id is absent or `"manual"`.
 
 ---
 
-## End-to-end flow
+## Step 3 — Verify the webhook router handles close payloads
 
-1. Entry alert fires → POST `/webhook-signal` → ALFRED scores → journal entry
-   written with `entry_price`, `stop_price`, `tp1_price`, `tp2_price` and id
-   `CI-YYYY-MM-DD-NNN`.
-2. Pine Script stores that id in `var string activeSignalId` and feeds it to
-   `strategy.entry(comment=...)`.
-3. Price hits TP1 or stop → close alert fires → POST `/webhook-close` with the
-   stored `signal_id`.
-4. Server flips entry status from `OPEN` to `WIN` / `LOSS` / `SCRATCH`,
-   recalculates calibration, and fires the post-mortem in the background.
+The Railway webhook router at `src/app/api/webhook/route.ts` inspects the
+payload and routes based on the presence of `close_reason`:
+
+```typescript
+// Existing router logic (already shipped in commit fc3cf9d)
+if (body.close_reason) {
+  // → forward to /api/webhook-close
+} else if (body.direction) {
+  // → forward to /api/webhook-signal
+}
+```
+
+No code changes needed. The routing is already live.
+
+---
+
+## Step 4 — Test the pipeline
+
+### Manual test (curl):
+```bash
+# Simulate a stop-out on a LONG
+curl -X POST "https://web-production-078a.up.railway.app/api/webhook?secret=YOUR_WEBHOOK_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "close_reason": "stop",
+    "direction": "LONG",
+    "exit_price": 78.20,
+    "signal_id": "manual",
+    "ticker": "CL1!",
+    "timestamp": "2026-04-29T10:00:00Z"
+  }'
+```
+
+Expected: journal entry with status `open` → flipped to `stopped_out`.
+Post-mortem fires within ~5 seconds. Check Vercel function logs to confirm.
+
+### Check post-mortem health:
+```bash
+curl -s https://crude-intentions.vercel.app/api/journal/postmortem-health | jq .
+```
+All four fields should be `true`.
+
+---
+
+## What fires automatically after a close alert lands
+
+1. `webhook-close` resolves the journal entry (sets exit_price, outcome, R)
+2. `calibration.ts` recalculates the full snapshot (win rate, Sharpe, Wilson CI)
+3. `market-memory.ts` updates ALFRED's persistent context with the outcome
+4. `post-mortem.ts` fires ALFRED analysis — coaching note auto-appears in journal
+5. Phase 3 gate counter increments toward 20 live closed trades
+
+---
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---------|-------------|-----|
+| Alert fires but journal doesn't update | Wrong webhook URL or secret | Verify URL has `?secret=` matching `WEBHOOK_SECRET` env var |
+| `signal_id not found` in logs | `{{strategy.order.id}}` not resolving | Use `"manual"` as signal_id — route falls back to latest open entry |
+| Post-mortem doesn't fire | `VERCEL_APP_URL` not set on Railway | Add var: `https://crude-intentions.vercel.app` |
+| Alert fires twice | Trigger set to "Every bar" not "Once per bar close" | Change trigger condition in TradingView alert settings |
+| TP2 never auto-resolves | TP2 alert not created | Add two more alerts mirroring TP1 but with `"close_reason": "tp2"` |
+
+---
+
+*Commit this file to `docs/PINE_SCRIPT_CLOSE_ALERT.md` if not already present.*
