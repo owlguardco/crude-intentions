@@ -41,6 +41,7 @@ interface StreetPulse {
   samples: number;
   headlines: Headline[];
   updated_at: string;
+  stale?: boolean;
 }
 
 function colorFor(s: Sentiment): string {
@@ -137,11 +138,30 @@ export default function StreetPulseWidget() {
         }}
       >
         <span>STREET PULSE</span>
-        {pulse?.updated_at && (
-          <span style={{ fontSize: 8, letterSpacing: "1px", color: C.dim }}>
-            {fmtTimeAgo(pulse.updated_at)}
-          </span>
-        )}
+        <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          {pulse?.stale && (
+            <span
+              title="All feeds unreachable — showing last successful fetch"
+              style={{
+                fontFamily: FONT_MONO,
+                fontSize: 8,
+                letterSpacing: "1px",
+                padding: "2px 5px",
+                borderRadius: 3,
+                color: C.muted,
+                background: "#2a2a2e40",
+                border: `1px solid ${C.border}`,
+              }}
+            >
+              CACHED
+            </span>
+          )}
+          {pulse?.updated_at && (
+            <span style={{ fontSize: 8, letterSpacing: "1px", color: C.dim }}>
+              {fmtTimeAgo(pulse.updated_at)}
+            </span>
+          )}
+        </span>
       </div>
 
       {/* Headline label + score */}

@@ -33,6 +33,10 @@ const FEEDS: Array<{ url: string; source: string }> = [
     source: 'Yahoo Finance',
   },
   {
+    url: 'https://finance.yahoo.com/rss/headline?s=CL=F',
+    source: 'Yahoo Finance (alt)',
+  },
+  {
     url: 'https://feeds.reuters.com/reuters/businessNews',
     source: 'Reuters',
   },
@@ -41,6 +45,8 @@ const FEEDS: Array<{ url: string; source: string }> = [
     source: 'Investing.com',
   },
 ];
+
+const STALE_FALLBACK_MAX_AGE_MS = 2 * 60 * 60 * 1000; // 2h
 
 const BULLISH_KEYWORDS = [
   'rally', 'surge', 'rise', 'bullish', 'opec cut', 'draw', 'deficit', 'supply drop',
@@ -66,6 +72,7 @@ export interface StreetPulseResponse {
   headlines: StreetPulseHeadline[];
   updated_at: string;
   error?: string;
+  stale?: boolean;
 }
 
 interface CachedPulse extends StreetPulseResponse {
@@ -182,6 +189,28 @@ export async function GET() {
   }
 
   if (liveFeeds === 0) {
+    // Stale cache fallback — if we still have a payload from the last
+    // successful fetch under 2 hours old, return it flagged stale rather
+    // than an empty feed_unavailable response. The dashboard prefers
+    // 90-minute-old sentiment to no sentiment.
+    try {
+      const stale = await kv.get<CachedPulse>(KV_KEY);
+      if (stale?.cached_at) {
+        const age = Date.now() - Date.parse(stale.cached_at);
+        if (
+          Number.isFinite(age) &&
+          age < STALE_FALLBACK_MAX_AGE_MS &&
+          !stale.error &&
+          stale.samples > 0
+        ) {
+          const { cached_at: _drop, error: _drop2, ...payload } = stale;
+          return NextResponse.json({ ...payload, stale: true });
+        }
+      }
+    } catch {
+      // fall through to feed_unavailable
+    }
+
     const result = emptyPulse('feed_unavailable');
     try {
       await kv.set(KV_KEY, { ...result, cached_at: new Date().toISOString() });
