@@ -26,6 +26,146 @@ function fmtBriefTime(iso: string): string {
   } catch { return iso; }
 }
 
+interface SnapshotShape {
+  totals?: { trades_closed?: number; historical_closed?: number };
+  overall?: { win_rate?: number };
+}
+
+function Phase3GateWidget() {
+  const [snapshot, setSnapshot] = useState<SnapshotShape | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const apiKey = process.env.NEXT_PUBLIC_INTERNAL_API_KEY ?? "";
+        const res = await fetch("/api/journal/observer", {
+          headers: { "x-api-key": apiKey },
+          cache: "no-store",
+        });
+        if (cancelled) return;
+        if (!res.ok) { setLoaded(true); return; }
+        const json = await res.json();
+        setSnapshot(json?.snapshot ?? null);
+        setLoaded(true);
+      } catch {
+        if (!cancelled) setLoaded(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const tradesClosed = snapshot?.totals?.trades_closed ?? 0;
+  const historicalClosed = snapshot?.totals?.historical_closed ?? 0;
+  const liveClosed = Math.max(0, tradesClosed - historicalClosed);
+  // overall.win_rate is stored as percent (0-100), not a 0-1 fraction.
+  const winRatePct = snapshot?.overall?.win_rate ?? 0;
+  const haveData = loaded && snapshot != null;
+
+  const gate1Pass = haveData && liveClosed >= 20;
+  const gate2Pass = haveData && liveClosed >= 20 && winRatePct > 55;
+  const gate3Pass = false; // vectorbt — not yet built
+  const gate4Pass = false; // 2-week SIM paper — manual
+  const gate5Pass = false; // Apex PA phase — manual
+
+  const allPass = gate1Pass && gate2Pass && gate3Pass && gate4Pass && gate5Pass;
+
+  const gates: Array<{ pass: boolean; label: string; value: string }> = [
+    {
+      pass: gate1Pass,
+      label: "20+ live closed trades",
+      value: haveData ? `${liveClosed} / 20` : "AWAITING DATA",
+    },
+    {
+      pass: gate2Pass,
+      label: "Win rate > 55%",
+      value: !haveData
+        ? "AWAITING DATA"
+        : liveClosed < 20
+        ? "PENDING LIVE DATA"
+        : `${winRatePct.toFixed(1)}%`,
+    },
+    {
+      pass: gate3Pass,
+      label: "Sharpe > 1.2",
+      value: "PENDING — requires vectorbt backtest",
+    },
+    {
+      pass: gate4Pass,
+      label: "2-week SIM paper trading",
+      value: "PENDING — manual confirmation",
+    },
+    {
+      pass: gate5Pass,
+      label: "Apex account in PA phase",
+      value: "PENDING — manual confirmation",
+    },
+  ];
+
+  return (
+    <div
+      style={{
+        background: "#1a1a1e",
+        border: `1px solid ${allPass ? "#22c55e" : "#2a2a2e"}`,
+        borderRadius: 6,
+        padding: 20,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+        <span
+          style={{
+            fontFamily: "JetBrains Mono, monospace",
+            fontSize: 9,
+            letterSpacing: "3px",
+            color: allPass ? "#22c55e" : "#d4a520",
+          }}
+        >
+          PHASE 3 GATE
+        </span>
+        {allPass && (
+          <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "1px", color: "#22c55e", fontWeight: 700 }}>
+            ✓ GATE CLEAR — Phase 3 is unlocked
+          </span>
+        )}
+      </div>
+
+      <div>
+        {gates.map((g, i) => (
+          <div
+            key={i}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "10px 0",
+              borderBottom: i < gates.length - 1 ? "1px solid #2a2a2e20" : "none",
+            }}
+          >
+            <span
+              style={{
+                fontFamily: "JetBrains Mono, monospace",
+                fontSize: 13,
+                color: g.pass ? "#22c55e" : "#ef4444",
+                width: 14,
+                flexShrink: 0,
+              }}
+            >
+              {g.pass ? "✓" : "✗"}
+            </span>
+            <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: "#e0e0e0", flex: 1 }}>
+              {g.label}
+            </span>
+            <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, color: "#888", textAlign: "right" }}>
+              {g.value}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ObserverAlertsWidget() {
   const [notes, setNotes] = useState<string[] | null>(null);
 
@@ -339,6 +479,9 @@ export default function DashboardPage() {
 
       {/* Observer Alerts — calibration drift / win-rate / factor health notes */}
       <ObserverAlertsWidget />
+
+      {/* Phase 3 readiness gate — 5-condition checklist before live capital */}
+      <Phase3GateWidget />
 
       {/* Street Pulse — sentiment readout below the market-memory row */}
       <StreetPulseWidget />
