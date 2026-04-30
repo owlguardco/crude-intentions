@@ -24,13 +24,15 @@ const FONT_SANS = "Inter, sans-serif";
 
 const FACTOR_LABELS: Record<FactorKey, string> = {
   ema_stack_aligned: "EMA Stack",
+  daily_confirms: "Daily Confirms",
   rsi_reset_zone: "RSI Reset",
-  price_at_key_level: "Key Level",
+  volume_confirmed: "Volume",
+  price_at_key_level: "FVG Entry",
+  rr_valid: "R/R",
   session_timing: "Session",
-  market_bias: "Mkt Bias",
-  candle_confirmation: "Candle Conf",
-  volume_profile: "Vol Profile",
-  no_eia_window: "No EIA",
+  eia_window_clear: "EIA Clear",
+  vwap_aligned: "VWAP",
+  htf_structure_clear: "HTF Clear",
   overnight_range_position: "Overnight Rng",
   ovx_regime: "OVX Regime",
 };

@@ -34,27 +34,36 @@ export interface CalibrationEntry {
   };
 }
 
+// v1.9 FactorKey set — must mirror the keys in JournalWriteSchema.checklist
+// (src/lib/validation/journal-schema.ts). Earlier versions had v1.7-era names
+// like market_bias / candle_confirmation / volume_profile / no_eia_window
+// that never matched what the schema actually stores, so by_factor
+// aggregation found nothing and every factor reported pass_stats.trades=0.
 export type FactorKey =
   | 'ema_stack_aligned'
+  | 'daily_confirms'
   | 'rsi_reset_zone'
+  | 'volume_confirmed'
   | 'price_at_key_level'
+  | 'rr_valid'
   | 'session_timing'
-  | 'market_bias'
-  | 'candle_confirmation'
-  | 'volume_profile'
-  | 'no_eia_window'
+  | 'eia_window_clear'
+  | 'vwap_aligned'
+  | 'htf_structure_clear'
   | 'overnight_range_position'
   | 'ovx_regime';
 
 export const FACTOR_KEYS: FactorKey[] = [
   'ema_stack_aligned',
+  'daily_confirms',
   'rsi_reset_zone',
+  'volume_confirmed',
   'price_at_key_level',
+  'rr_valid',
   'session_timing',
-  'market_bias',
-  'candle_confirmation',
-  'volume_profile',
-  'no_eia_window',
+  'eia_window_clear',
+  'vwap_aligned',
+  'htf_structure_clear',
   'overnight_range_position',
   'ovx_regime',
 ];

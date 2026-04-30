@@ -10,13 +10,15 @@ import {
 
 const FACTOR_LABELS: Record<FactorKey, string> = {
   ema_stack_aligned: "EMA Stack",
+  daily_confirms: "Daily Confirms",
   rsi_reset_zone: "RSI Reset",
-  price_at_key_level: "Key Level",
+  volume_confirmed: "Volume",
+  price_at_key_level: "FVG Entry",
+  rr_valid: "R/R",
   session_timing: "Session",
-  market_bias: "Mkt Bias",
-  candle_confirmation: "Candle Conf",
-  volume_profile: "Vol Profile",
-  no_eia_window: "No EIA",
+  eia_window_clear: "EIA Clear",
+  vwap_aligned: "VWAP",
+  htf_structure_clear: "HTF Clear",
   overnight_range_position: "Overnight Rng",
   ovx_regime: "OVX Regime",
 };
@@ -1096,7 +1098,7 @@ function CalibrationPanel({ snapshot, notes, loaded }: CalibrationPanelProps) {
         {[
           ["OVERALL WIN RATE", fmtPct(snapshot.overall.win_rate), `${snapshot.totals.trades_closed} trades closed`, "#e0e0e0"],
           ["LAST 30 TRADES", r30Display, `${r30.trades} trades`, "#e0e0e0"],
-          ["EDGE HEALTH", `${factorsStrong} / 8`, "factors with strong edge", edgeColor],
+          ["EDGE HEALTH", `${factorsStrong} / 12`, "factors with strong edge", edgeColor],
         ].map(([label, value, sub, color]) => (
           <div key={label} style={{ background: "#1a1a1e", border: "1px solid #2a2a2e", borderRadius: 6, padding: "18px 20px" }}>
             <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "2px", color: "#888", marginBottom: 10 }}>{label}</div>
