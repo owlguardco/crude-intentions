@@ -5,9 +5,14 @@
  *
  * Single-URL TradingView entry point that dispatches to the right handler
  * based on payload shape:
- *   - body has `direction`     → forwards to /api/webhook-signal logic
  *   - body has `close_reason`  → forwards to /api/webhook-close logic
+ *   - body has `direction`     → forwards to /api/webhook-signal logic
  *   - neither                  → 400 Unknown payload
+ *
+ * close_reason is checked FIRST because TradingView close alerts often
+ * also carry the original `direction` (LONG/SHORT) as context. Routing
+ * by `direction` first would mis-route close payloads into the open
+ * handler and 400 on missing ema/rsi fields.
  *
  * Auth: ?secret= query param matches WEBHOOK_SECRET (constant-time compare).
  *
@@ -72,16 +77,19 @@ export async function POST(req: NextRequest) {
 
   const obj = payload as Record<string, unknown>;
 
-  if ('direction' in obj) {
-    // webhook-signal authorizes via x-api-key — stamp it ourselves now that
-    // the outer ?secret= has been verified.
-    return webhookSignalPOST(forward(req, rawBody, { 'x-api-key': INTERNAL_API_KEY }));
-  }
-
+  // Close payloads first — TradingView close alerts often also carry
+  // `direction` (LONG/SHORT) as context, so checking `direction` first
+  // would mis-route them into the open handler and 400 on missing fields.
   if ('close_reason' in obj) {
     // webhook-close authorizes via x-signature HMAC OR ?secret= — the URL
     // already carries ?secret=, so the forwarded request will pass.
     return webhookClosePOST(forward(req, rawBody));
+  }
+
+  if ('direction' in obj) {
+    // webhook-signal authorizes via x-api-key — stamp it ourselves now that
+    // the outer ?secret= has been verified.
+    return webhookSignalPOST(forward(req, rawBody, { 'x-api-key': INTERNAL_API_KEY }));
   }
 
   return NextResponse.json({ error: 'Unknown payload' }, { status: 400 });
