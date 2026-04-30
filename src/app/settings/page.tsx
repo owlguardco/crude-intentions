@@ -173,6 +173,18 @@ export default function SettingsPage() {
   const [scanning, setScanning] = useState(false);
   const [scanToast, setScanToast] = useState<string | null>(null);
 
+  // Supply-context scan state
+  type SupplyContextValue = {
+    cushing_vs_4wk: 'BUILDING' | 'DRAWING' | 'FLAT' | null;
+    eia_4wk_trend: 'BUILDS' | 'DRAWS' | 'MIXED' | null;
+    rig_count_trend: 'RISING' | 'FALLING' | 'FLAT' | null;
+    supply_bias: 'BEARISH' | 'NEUTRAL' | 'BULLISH' | null;
+    updated_at?: string;
+  };
+  const [supplyCtx, setSupplyCtx] = useState<SupplyContextValue | null>(null);
+  const [supplyScanning, setSupplyScanning] = useState(false);
+  const [supplyToast, setSupplyToast] = useState<string | null>(null);
+
   // FVG add-form state
   const [fvgDir, setFvgDir] = useState<'bullish' | 'bearish'>('bullish');
   const [fvgTop, setFvgTop] = useState('');
@@ -257,6 +269,52 @@ export default function SettingsPage() {
     } finally {
       setScanning(false);
       setTimeout(() => setScanToast(null), 4000);
+    }
+  }
+
+  // Supply context — cached read on mount, fresh fetch via SCAN NOW button
+  const loadSupply = useCallback(async () => {
+    try {
+      const res = await fetch('/api/supply-context', {
+        method: 'GET',
+        headers: authHeaders(),
+      });
+      if (!res.ok) return;
+      const json = await res.json();
+      if (json?.supply_context) setSupplyCtx(json.supply_context as SupplyContextValue);
+    } catch {
+      // ignore
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => { loadSupply(); }, [loadSupply]);
+
+  async function runSupplyScan() {
+    if (supplyScanning) return;
+    setSupplyScanning(true);
+    try {
+      const res = await fetch('/api/supply-context', {
+        method: 'POST',
+        headers: authHeaders(),
+      });
+      const json = await res.json();
+      if (!res.ok || json?.error) {
+        setSupplyToast(`✗ ${json?.error ?? 'scan failed'}`);
+        if (json?.supply_context) setSupplyCtx(json.supply_context as SupplyContextValue);
+      } else {
+        const bias = json?.supply_context?.supply_bias ?? '—';
+        setSupplyToast(`✓ ${bias} supply bias`);
+        setSupplyCtx({
+          ...(json.supply_context as SupplyContextValue),
+          updated_at: new Date().toISOString(),
+        });
+      }
+    } catch {
+      setSupplyToast('✗ eia_unavailable');
+    } finally {
+      setSupplyScanning(false);
+      setTimeout(() => setSupplyToast(null), 4000);
     }
   }
 
@@ -683,6 +741,66 @@ export default function SettingsPage() {
             </table>
           </div>
         )}
+      </div>
+
+      {/* ── SUPPLY CONTEXT ─────────────────────────────────────────── */}
+      <div style={card}>
+        <div style={{ ...sectionTitle, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span>SUPPLY CONTEXT</span>
+          <span style={{ ...mono, fontSize: 9, color: C.dim }}>
+            {supplyCtx?.updated_at ? `last scan ${fmtTime(supplyCtx.updated_at)}` : 'never scanned'}
+          </span>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14 }}>
+          <button
+            style={{ ...btn('primary'), opacity: supplyScanning ? 0.6 : 1, cursor: supplyScanning ? 'not-allowed' : 'pointer' }}
+            onClick={runSupplyScan}
+            disabled={supplyScanning}
+          >
+            {supplyScanning ? 'SCANNING...' : 'SCAN NOW'}
+          </button>
+          {supplyToast && (
+            <span style={{ ...mono, fontSize: 10, letterSpacing: '1px', color: supplyToast.startsWith('✓') ? C.green : C.red }}>
+              {supplyToast}
+            </span>
+          )}
+          <span style={{ ...mono, fontSize: 9, color: C.muted, marginLeft: 'auto' }}>
+            EIA WSTK + Cushing · 5-week window
+          </span>
+        </div>
+
+        {(() => {
+          const sc = supplyCtx;
+          const biasColor =
+            sc?.supply_bias === 'BEARISH' ? C.red
+            : sc?.supply_bias === 'BULLISH' ? C.green
+            : C.muted;
+          const cells: Array<[string, string, string]> = [
+            ['CUSHING',     sc?.cushing_vs_4wk ?? '—',  C.text],
+            ['EIA 4WK',     sc?.eia_4wk_trend ?? '—',   C.text],
+            ['RIG COUNT',   sc?.rig_count_trend ?? '—', C.muted],
+            ['SUPPLY BIAS', sc?.supply_bias ?? '—',     biasColor],
+          ];
+          return (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              {cells.map(([labelText, value, color]) => (
+                <div
+                  key={labelText}
+                  style={{
+                    background: C.panel2,
+                    border: `1px solid ${C.border}`,
+                    borderRadius: 4,
+                    padding: '10px 12px',
+                  }}
+                >
+                  <div style={{ ...mono, fontSize: 8, letterSpacing: '2px', color: C.muted, marginBottom: 4 }}>{labelText}</div>
+                  <div style={{ ...mono, fontSize: 13, fontWeight: 700, color }}>{value}</div>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
       </div>
 
       <div style={card}>
