@@ -22,7 +22,7 @@ You score CL futures setups against a 5-layer, 10-point A+ checklist.
 Three-timeframe architecture: Daily/Weekly (macro bias) → 4H (setup zone) → 15min (entry trigger).
 MINIMUM TO TRADE: 7/10. COUNTERTREND MINIMUM: 9/10.
 Layer 1 [Daily/Weekly 2pts]: ema_stack_aligned, daily_confirms
-Layer 2 [4H Momentum 2pts]: rsi_reset_zone (35-55 longs 45-65 shorts), macd_confirming
+Layer 2 [4H Momentum 2pts]: rsi_reset_zone (35-55 longs 45-65 shorts), volume_confirmed (15min trigger candle volume >= 20-bar avg)
 Layer 3 [Structure 2pts]: price_at_key_level (inside 4H FVG or EMA20), rr_valid (2:1 min)
 Layer 4 [HTF Context 2pts]: session_timing (NY Open 9:30-11:45 ET), eia_window_clear
 Layer 5 [15min Trigger 2pts]: vwap_aligned, htf_structure_clear
@@ -30,7 +30,7 @@ HARD BLOCKS: EIA window active, OVX > 50
 GRADING: 10=A+ CONVICTION, 8-9=A HIGH, 7=B+ MEDIUM, 5-6=B NO TRADE, 0-4=F NO TRADE
 Output ONLY valid JSON. No prose, no markdown fences, no preamble.
 SCHEMA:
-{"score":<0-10>,"grade":"A+"|"A"|"B+"|"B"|"F","decision":"LONG"|"SHORT"|"NO TRADE","confidence_label":"CONVICTION"|"HIGH"|"MEDIUM"|"LOW","checklist":[{"label":"EMA Stack Aligned","result":"PASS"|"FAIL","detail":"string"},{"label":"Daily Confirms","result":"PASS"|"FAIL","detail":"string"},{"label":"RSI Reset Zone","result":"PASS"|"FAIL","detail":"string"},{"label":"MACD Confirming","result":"PASS"|"FAIL","detail":"string"},{"label":"Price at Key Level","result":"PASS"|"FAIL","detail":"string"},{"label":"R/R Valid","result":"PASS"|"FAIL","detail":"string"},{"label":"Session Timing","result":"PASS"|"FAIL","detail":"string"},{"label":"EIA Window Clear","result":"PASS"|"FAIL","detail":"string"},{"label":"VWAP Aligned","result":"PASS"|"FAIL","detail":"string"},{"label":"HTF Structure Clear","result":"PASS"|"FAIL","detail":"string"}],"blocked_reasons":[],"wait_for":null,"reasoning":"2-3 sentences","disclaimer":"AI-generated research only."}`;
+{"score":<0-10>,"grade":"A+"|"A"|"B+"|"B"|"F","decision":"LONG"|"SHORT"|"NO TRADE","confidence_label":"CONVICTION"|"HIGH"|"MEDIUM"|"LOW","checklist":[{"label":"EMA Stack Aligned","result":"PASS"|"FAIL","detail":"string"},{"label":"Daily Confirms","result":"PASS"|"FAIL","detail":"string"},{"label":"RSI Reset Zone","result":"PASS"|"FAIL","detail":"string"},{"label":"Volume Confirmed","result":"PASS"|"FAIL","detail":"string"},{"label":"Price at Key Level","result":"PASS"|"FAIL","detail":"string"},{"label":"R/R Valid","result":"PASS"|"FAIL","detail":"string"},{"label":"Session Timing","result":"PASS"|"FAIL","detail":"string"},{"label":"EIA Window Clear","result":"PASS"|"FAIL","detail":"string"},{"label":"VWAP Aligned","result":"PASS"|"FAIL","detail":"string"},{"label":"HTF Structure Clear","result":"PASS"|"FAIL","detail":"string"}],"blocked_reasons":[],"wait_for":null,"reasoning":"2-3 sentences","disclaimer":"AI-generated research only."}`;
 
 const ADVERSARIAL_SYSTEM_PROMPT = `You are an adversarial trading analyst. Find every reason to SKIP this CL trade.
 Check: trend alignment, FVG quality, RSI context, macro timing, OVX regime, R:R after slippage, recency bias, score honesty.
@@ -44,7 +44,8 @@ const WebhookSignalSchema = z.object({
   ema50: z.number().finite().min(10).max(500),
   ema200: z.number().finite().min(10).max(500),
   rsi: z.number().finite().min(0).max(100),
-  macd: z.number().finite().min(-100).max(100).optional(),
+  trigger_volume: z.number().finite().min(0).max(1_000_000_000).optional(),
+  avg_volume:     z.number().finite().min(0).max(1_000_000_000).optional(),
   vwap: z.number().finite().min(10).max(500).optional(),
   ovx: z.number().finite().min(0).max(300),
   dxy: z.enum(['rising', 'falling', 'flat', 'neutral']),
@@ -99,7 +100,7 @@ function signalToFallbackInput(s: WebhookSignal): FallbackScorerInput {
   return {
     direction: s.direction,
     price: s.price, ema20: s.ema20, ema50: s.ema50, ema200: s.ema200,
-    rsi: s.rsi, macd: s.macd, vwap: s.vwap, ovx: s.ovx,
+    rsi: s.rsi, trigger_volume: s.trigger_volume, avg_volume: s.avg_volume, vwap: s.vwap, ovx: s.ovx,
     dxy, fvg_direction: fvgDir, fvg_top: s.fvg_top, fvg_bottom: s.fvg_bottom,
     session: s.session, weekly_bias: wb, eia_active: s.eia_active,
   };
@@ -112,7 +113,7 @@ async function runALFRED(signal: WebhookSignal): Promise<AlfredResult> {
   const prompt = `Analyze this CL setup against v1.8 checklist:
 Direction: ${signal.direction} | Price: ${signal.price}
 EMA20: ${signal.ema20} EMA50: ${signal.ema50} EMA200: ${signal.ema200}
-RSI: ${signal.rsi} | MACD: ${signal.macd ?? 'N/A'} | VWAP: ${signal.vwap ?? 'N/A'}
+RSI: ${signal.rsi} | Trigger Vol: ${signal.trigger_volume ?? 'N/A'} | Avg Vol (20-bar): ${signal.avg_volume ?? 'N/A'} | VWAP: ${signal.vwap ?? 'N/A'}
 OVX: ${signal.ovx} | DXY: ${signal.dxy}
 FVG: ${signal.fvg_direction} ${signal.fvg_bottom}-${signal.fvg_top}
 Session: ${signal.session} | Weekly bias: ${signal.weekly_bias ?? 'not set'}
@@ -158,7 +159,7 @@ function mapChecklist(checklist: ChecklistItem[]) {
     ema_stack_aligned:   { result: g('EMA Stack Aligned').result,   detail: g('EMA Stack Aligned').detail },
     daily_confirms:      { result: g('Daily Confirms').result,       detail: g('Daily Confirms').detail },
     rsi_reset_zone:      { result: g('RSI Reset Zone').result,       detail: g('RSI Reset Zone').detail },
-    macd_confirming:     { result: g('MACD Confirming').result,      detail: g('MACD Confirming').detail },
+    volume_confirmed:    { result: g('Volume Confirmed').result,     detail: g('Volume Confirmed').detail },
     price_at_key_level:  { result: g('Price at Key Level').result,   detail: g('Price at Key Level').detail },
     rr_valid:            { result: g('R/R Valid').result,            detail: g('R/R Valid').detail },
     session_timing:      { result: g('Session Timing').result,       detail: g('Session Timing').detail },

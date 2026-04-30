@@ -98,7 +98,7 @@ function mapChecklistToJournal(
     ema_stack_aligned:   { result: get("EMA Stack Aligned").result,   detail: get("EMA Stack Aligned").detail   },
     daily_confirms:      { result: get("Daily Confirms").result,      detail: get("Daily Confirms").detail      },
     rsi_reset_zone:      { result: get("RSI Reset Zone").result,      detail: get("RSI Reset Zone").detail      },
-    macd_confirming:     { result: get("MACD Confirming").result,     detail: get("MACD Confirming").detail     },
+    volume_confirmed:    { result: get("Volume Confirmed").result,    detail: get("Volume Confirmed").detail    },
     price_at_key_level:  { result: get("Price at Key Level").result,  detail: get("Price at Key Level").detail  },
     rr_valid:            { result: get("R/R Valid").result,           detail: get("R/R Valid").detail           },
     session_timing:      { result: get("Session Timing").result,      detail: get("Session Timing").detail      },
@@ -166,7 +166,7 @@ function GradeBadge({ grade }: { grade: string }) {
 export default function PreTradePage() {
   const [form, setForm] = useState({
     price: "", ema20: "", ema50: "", ema200: "",
-    rsi: "", macd: "", ovx: "",
+    rsi: "", triggerVolume: "", avgVolume: "", ovx: "",
     dxy: "Declining", fvg: "Bullish",
     fvgTop: "", fvgBottom: "", fvgAge: "",
     session: "NY Open",
@@ -361,7 +361,8 @@ export default function PreTradePage() {
             ["ema50", "EMA 50"],
             ["ema200", "EMA 200"],
             ["rsi", "RSI 14 (0–100)"],
-            ["macd", "MACD HIST"],
+            ["triggerVolume", "TRIGGER CANDLE VOL"],
+            ["avgVolume", "AVG VOL (20-BAR)"],
             ["ovx", "OVX"],
           ].map(([key, label]) => (
             <div key={key}>

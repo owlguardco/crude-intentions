@@ -346,7 +346,7 @@ const CHECKLIST_ITEMS = [
   "EMA Stack Aligned",
   "Daily Trend Confirms",
   "RSI in Reset Zone",
-  "MACD Confirming",
+  "Volume Confirmed",
   "Price at Key Level",
   "R/R ≥ 2:1",
   "Session Timing",

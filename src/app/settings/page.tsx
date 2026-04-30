@@ -94,7 +94,7 @@ interface MarketContext {
   invalidation_notes: string | null;
   key_levels: { resistance: number[]; support: number[]; notes: string | null };
   ema_stack: { ema20: number; ema50: number; ema200: number; alignment: string };
-  oscillators: { rsi_4h: number; rsi_1h: number | null; macd_histogram: number | null };
+  oscillators: { rsi_4h: number; rsi_1h: number | null };
   macro_backdrop: string;
   active_fvgs: ActiveFvg[];
   active_trade_ideas: TradeIdea[];
@@ -163,7 +163,8 @@ export default function SettingsPage() {
   const [ema50, setEma50] = useState('');
   const [ema200, setEma200] = useState('');
   const [rsi4h, setRsi4h] = useState('');
-  const [macd, setMacd] = useState('');
+  // MACD removed in v1.9 swap — Layer 2 momentum is now volume-confirmation
+  // on the 15-min trigger candle (per-trade, not market-state).
   const [macro, setMacro] = useState('');
   const [lastBar, setLastBar] = useState('');
   const [invalidation, setInvalidation] = useState('');
@@ -229,7 +230,6 @@ export default function SettingsPage() {
       setEma50(data.ema_stack.ema50 > 0 ? String(data.ema_stack.ema50) : '');
       setEma200(data.ema_stack.ema200 > 0 ? String(data.ema_stack.ema200) : '');
       setRsi4h(data.oscillators.rsi_4h > 0 ? String(data.oscillators.rsi_4h) : '');
-      setMacd(data.oscillators.macd_histogram != null ? String(data.oscillators.macd_histogram) : '');
       setMacro(data.macro_backdrop ?? '');
       setLastBar(data.last_bar ?? '');
       setInvalidation(data.invalidation_notes ?? '');
@@ -414,7 +414,6 @@ export default function SettingsPage() {
       if (rsi4h) {
         body.oscillators = {
           rsi_4h: parseFloat(rsi4h),
-          ...(macd ? { macd_histogram: parseFloat(macd) } : {}),
         };
       }
       const res = await fetch('/api/market-context', {
@@ -970,15 +969,9 @@ export default function SettingsPage() {
             <input style={input} value={ema200} onChange={e => setEma200(e.target.value)} placeholder="76.40" />
           </div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
-          <div>
-            <span style={label}>RSI 4H</span>
-            <input style={input} value={rsi4h} onChange={e => setRsi4h(e.target.value)} placeholder="52" />
-          </div>
-          <div>
-            <span style={label}>MACD HISTOGRAM</span>
-            <input style={input} value={macd} onChange={e => setMacd(e.target.value)} placeholder="0.08" />
-          </div>
+        <div style={{ marginBottom: 16 }}>
+          <span style={label}>RSI 4H</span>
+          <input style={input} value={rsi4h} onChange={e => setRsi4h(e.target.value)} placeholder="52" />
         </div>
         <div style={{ marginBottom: 16 }}>
           <span style={label}>MACRO BACKDROP</span>

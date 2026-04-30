@@ -21,7 +21,8 @@ export interface FallbackScorerInput {
   ema50: number;
   ema200: number;
   rsi: number;
-  macd?: number;
+  trigger_volume?: number;
+  avg_volume?: number;
   vwap?: number;
   ovx: number;
   dxy: 'rising' | 'falling' | 'flat' | 'neutral';
@@ -91,10 +92,15 @@ export function runFallbackScorer(input: FallbackScorerInput): FallbackScorerRes
   const rsiInZone =
     (dir === 'LONG'  && input.rsi >= 35 && input.rsi <= 55) ||
     (dir === 'SHORT' && input.rsi >= 45 && input.rsi <= 65);
-  const macdConfirming =
-    typeof input.macd === 'number'
-      ? (dir === 'LONG' ? input.macd > 0 : input.macd < 0)
-      : false;
+  // Volume confirmation: trigger candle volume vs 20-bar session average.
+  // PASS at >= 1.0x, FAIL below 0.85x. The 0.85x-1.0x band is "conditional"
+  // — flagged in the detail string but not auto-passed since the deterministic
+  // scorer has no nuance to apply beyond the threshold.
+  const volumeRatio =
+    typeof input.trigger_volume === 'number' && typeof input.avg_volume === 'number' && input.avg_volume > 0
+      ? input.trigger_volume / input.avg_volume
+      : null;
+  const volumeConfirmed = volumeRatio !== null && volumeRatio >= 1.0;
 
   // ── Layer 3: Structure (2 pts) ──────────────────────────────────────────
   const fvgDirMatches =
@@ -147,12 +153,16 @@ export function runFallbackScorer(input: FallbackScorerInput): FallbackScorerRes
         : `RSI ${input.rsi} outside reset zone (${dir === 'LONG' ? '35-55' : '45-65'})`,
     },
     {
-      label: 'MACD Confirming',
-      result: macdConfirming ? 'PASS' : 'FAIL',
+      label: 'Volume Confirmed',
+      result: volumeConfirmed ? 'PASS' : 'FAIL',
       detail:
-        typeof input.macd === 'number'
-          ? `MACD histogram ${input.macd}${macdConfirming ? '' : ' not confirming ' + dir}`
-          : 'MACD histogram not provided',
+        volumeRatio === null
+          ? 'Trigger candle / avg volume not provided'
+          : volumeConfirmed
+          ? `Trigger volume ${volumeRatio.toFixed(2)}x avg — institutional participation confirmed`
+          : volumeRatio >= 0.85
+          ? `Trigger volume ${volumeRatio.toFixed(2)}x avg — conditional, weak (no auto-pass)`
+          : `Trigger volume ${volumeRatio.toFixed(2)}x avg — thin, no institutional footprint`,
     },
     {
       label: 'Price at Key Level',

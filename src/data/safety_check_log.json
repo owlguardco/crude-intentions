@@ -31,7 +31,6 @@
         "ema_50": 77.90,
         "ema_200": 76.40,
         "rsi_14": 47.2,
-        "macd_histogram": 0.08,
         "ovx": 28.4,
         "dxy_trend": "DECLINING",
         "nearest_fvg": {
@@ -54,7 +53,7 @@
         },
         "layer_2_momentum": {
           "rsi_reset_zone": { "result": "PASS", "detail": "RSI 47.2 — in 35-55 reset zone for longs" },
-          "macd_confirming": { "result": "PASS", "detail": "Histogram 0.08, turning positive" }
+          "volume_confirmed": { "result": "PASS", "detail": "Trigger volume 1.2x avg" }
         },
         "layer_3_structure": {
           "price_at_key_level": { "result": "PASS", "detail": "Price at EMA20 and inside bullish FVG 78.20-78.45" },
@@ -109,7 +108,6 @@
         "ema_50": 77.90,
         "ema_200": 76.40,
         "rsi_14": 68.4,
-        "macd_histogram": 0.21,
         "ovx": 28.4,
         "dxy_trend": "DECLINING",
         "nearest_fvg": null,
@@ -126,7 +124,7 @@
         },
         "layer_2_momentum": {
           "rsi_reset_zone": { "result": "FAIL", "detail": "RSI 68.4 — above 55, not in reset zone. Extended, not pulled back." },
-          "macd_confirming": { "result": "PASS", "detail": "Histogram positive" }
+          "volume_confirmed": { "result": "PASS", "detail": "Trigger volume 1.4x avg" }
         },
         "layer_3_structure": {
           "price_at_key_level": { "result": "FAIL", "detail": "Price 78.85 — 0.50 above EMA20. No FVG at current price. Chasing." },

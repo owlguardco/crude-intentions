@@ -26,7 +26,7 @@
         "Unfilled 4H FVGs — map all active gaps, note age and size",
         "4H EMA20 as dynamic support/resistance — where is price likely to pull back to?",
         "RSI on 4H — is momentum resetting into the setup zone (35-55 longs, 45-65 shorts)?",
-        "MACD histogram on 4H — is it turning in trade direction?",
+        "Volume confirmation on the 15-min trigger candle — is volume >= the 20-bar session average (institutional participation)?",
         "VWAP on 4H — is institutional flow aligned with bias?",
         "HTF level proximity — is there a daily/weekly level within 0.50 that caps the trade?"
       ],
@@ -79,7 +79,7 @@
       "_timeframe": "4H",
       "checks": [
         "4H RSI in reset zone — 35-55 for longs, 45-65 for shorts",
-        "4H MACD histogram turning in trade direction"
+        "15min trigger candle volume above 20-bar average — above-average volume confirms institutional participation on the entry candle"
       ]
     },
     "layer_4_structure": {

@@ -105,7 +105,6 @@ export interface MarketContext {
   oscillators: {
     rsi_4h: number;
     rsi_1h: number | null;
-    macd_histogram: number | null;
   };
 
   macro_backdrop: string;
@@ -181,7 +180,7 @@ export function blankContext(): MarketContext {
     key_levels: { resistance: [], support: [], notes: null },
     active_fvgs: [],
     ema_stack: { ema20: 0, ema50: 0, ema200: 0, alignment: "MIXED" },
-    oscillators: { rsi_4h: 50, rsi_1h: null, macd_histogram: null },
+    oscillators: { rsi_4h: 50, rsi_1h: null },
     macro_backdrop: "",
     active_trade_ideas: [],
     recent_closed_trades: [],
@@ -402,9 +401,6 @@ export function buildMarketMemoryPromptSection(ctx: MarketContext): string {
       `EMA STACK: ${ctx.ema_stack.alignment} | 20=${ctx.ema_stack.ema20} 50=${ctx.ema_stack.ema50} 200=${ctx.ema_stack.ema200}`
     );
     lines.push(`RSI 4H: ${ctx.oscillators.rsi_4h}`);
-    if (ctx.oscillators.macd_histogram !== null) {
-      lines.push(`MACD Hist: ${ctx.oscillators.macd_histogram}`);
-    }
     lines.push("");
   }
 
@@ -552,7 +548,7 @@ function computeRecentStats(
  * truncates to 80 chars. Pure string manipulation — no LLM call.
  */
 function summarizeReasoningForContext(reasoning: string): string {
-  const factorKeywords = ["EMA", "RSI", "FVG", "VWAP", "HTF", "session", "OVX", "MACD", "DXY"];
+  const factorKeywords = ["EMA", "RSI", "FVG", "VWAP", "HTF", "session", "OVX", "volume", "DXY"];
   const sentences = reasoning.split(/[.!?]+/).map((s) => s.trim()).filter(Boolean);
 
   for (const sentence of sentences) {

@@ -36,7 +36,7 @@ export const JournalWriteSchema = z.object({
   risk_dollars: z.number().finite().min(0).max(50000).nullable(),
   checklist: z.object({
     ema_stack_aligned: C, daily_confirms: C, rsi_reset_zone: C,
-    macd_confirming: C, price_at_key_level: C, rr_valid: C,
+    volume_confirmed: C, price_at_key_level: C, rr_valid: C,
     session_timing: C, eia_window_clear: C, vwap_aligned: C,
     htf_structure_clear: C,
   }),

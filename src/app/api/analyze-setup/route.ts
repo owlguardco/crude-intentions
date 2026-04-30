@@ -27,7 +27,8 @@ const SetupInputSchema = z.object({
   ema50:  z.number().finite().min(10).max(500),
   ema200: z.number().finite().min(10).max(500),
   rsi:  z.number().finite().min(0).max(100),
-  macd: z.number().finite().min(-100).max(100).optional(),
+  triggerVolume: z.number().finite().min(0).max(1_000_000_000).optional(),
+  avgVolume:     z.number().finite().min(0).max(1_000_000_000).optional(),
   ovx: z.number().finite().min(0).max(300),
   dxy: z.enum(['rising', 'falling', 'flat', 'neutral']),
   fvg:       z.enum(['bullish', 'bearish', 'none']),
@@ -87,7 +88,7 @@ Layer 1 [Daily/Weekly — 2 pts]:
 
 Layer 2 [4H Momentum — 2 pts]:
   3. rsi_reset_zone: 4H RSI 35–55 (longs) or 45–65 (shorts)
-  4. macd_confirming: 4H MACD histogram turning in trade direction
+  4. volume_confirmed: 15-min trigger candle volume >= 20-bar session average — institutional participation present
 
 Layer 3 [Structure — 2 pts]:
   5. price_at_key_level: Price inside 4H FVG or at 4H EMA20
@@ -106,6 +107,11 @@ CONFIDENCE: 10→CONVICTION, 8–9→HIGH, 7→MEDIUM, ≤6→LOW
 
 HARD BLOCKS (override all scores): EIA window active, OVX > 50
 
+VOLUME RULES:
+- PASS: trigger candle volume >= 1.0x the 20-bar average for that session
+- CONDITIONAL: volume 0.85x-0.99x average — note as weak in detail, do not auto-fail, reduce conviction
+- FAIL: volume below 0.85x average — thin move, no institutional footprint
+
 Output ONLY valid JSON. No preamble, no markdown fences.
 
 SCHEMA:
@@ -118,7 +124,7 @@ SCHEMA:
     {"label": "EMA Stack Aligned",   "result": "PASS"|"FAIL", "detail": "string"},
     {"label": "Daily Confirms",      "result": "PASS"|"FAIL", "detail": "string"},
     {"label": "RSI Reset Zone",      "result": "PASS"|"FAIL", "detail": "string"},
-    {"label": "MACD Confirming",     "result": "PASS"|"FAIL", "detail": "string"},
+    {"label": "Volume Confirmed",    "result": "PASS"|"FAIL", "detail": "string"},
     {"label": "Price at Key Level",  "result": "PASS"|"FAIL", "detail": "string"},
     {"label": "R/R Valid",           "result": "PASS"|"FAIL", "detail": "string"},
     {"label": "Session Timing",      "result": "PASS"|"FAIL", "detail": "string"},
@@ -177,7 +183,8 @@ export async function POST(req: NextRequest) {
 Price: ${d.price}
 EMA20: ${d.ema20} | EMA50: ${d.ema50} | EMA200: ${d.ema200}
 RSI 14: ${d.rsi}
-MACD Histogram: ${d.macd ?? 'not provided'}
+Trigger Candle Volume: ${d.triggerVolume ?? 'not provided'}
+Avg Volume (20-bar): ${d.avgVolume ?? 'not provided'}
 OVX: ${d.ovx}
 DXY Trend: ${d.dxy}
 FVG: Direction=${d.fvg}, Top=${d.fvgTop ?? 'N/A'}, Bottom=${d.fvgBottom ?? 'N/A'}, Age=${d.fvgAge ?? 'N/A'} bars
@@ -197,7 +204,8 @@ Score this setup. Return JSON only.`;
       ema50: d.ema50,
       ema200: d.ema200,
       rsi: d.rsi,
-      macd: d.macd,
+      trigger_volume: d.triggerVolume,
+      avg_volume: d.avgVolume,
       vwap: d.vwap,
       ovx: d.ovx,
       dxy: d.dxy,

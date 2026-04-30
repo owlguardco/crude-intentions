@@ -114,7 +114,7 @@ export default function JournalPage() {
   function buildGuidedTrades(): unknown[] {
     const placeholderChecklist = (() => {
       const keys = [
-        "ema_stack_aligned", "daily_confirms", "rsi_reset_zone", "macd_confirming",
+        "ema_stack_aligned", "daily_confirms", "rsi_reset_zone", "volume_confirmed",
         "price_at_key_level", "rr_valid", "session_timing", "eia_window_clear",
         "vwap_aligned", "htf_structure_clear",
       ] as const;

@@ -165,7 +165,7 @@ def build_entry(date_signal, date_close, direction, entry, sim, ema20, ema50, em
         "ema_stack_aligned": pass_item(f"EMA20/50/200 stacked {direction.lower()} on daily"),
         "daily_confirms": fail_default,
         "rsi_reset_zone": pass_item(f"RSI {rsi:.1f} in 40-60 reset band"),
-        "macd_confirming": fail_default,
+        "volume_confirmed": fail_default,
         "price_at_key_level": fail_default,
         "rr_valid": fail_default,
         "session_timing": pass_item("Daily-bar approximation, stamped NY_OPEN"),
