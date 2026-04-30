@@ -376,8 +376,27 @@ export default function CalibrationPage() {
             {FACTOR_KEYS.map((key) => {
               const f = snapshot.by_factor[key];
               if (!f) return null;
-              const strong = f.drift_flag === false;
-              const statusColor = strong ? COLORS.green : COLORS.gold;
+              // Status reflects the sign of edge_pp first, with drift_flag
+              // overriding to FLAGGED when set. drift_flag = |edge_pp| < 5
+              // upstream, so it fires on uncertain edges between -5 and +5.
+              let statusLabel: string;
+              let statusColor: string;
+              if (f.drift_flag === true) {
+                statusLabel = "⚠ FLAGGED";
+                statusColor = COLORS.gold;
+              } else if (f.edge_pp >= 5) {
+                statusLabel = "STRONG";
+                statusColor = COLORS.green;
+              } else if (f.edge_pp > 0) {
+                statusLabel = "WEAK";
+                statusColor = COLORS.muted;
+              } else if (f.edge_pp === 0) {
+                statusLabel = "NEUTRAL";
+                statusColor = COLORS.muted;
+              } else {
+                statusLabel = "NEGATIVE";
+                statusColor = COLORS.red;
+              }
               const edgeColorRow =
                 f.edge_pp >= 0 ? COLORS.green : COLORS.red;
               return (
@@ -404,7 +423,7 @@ export default function CalibrationPage() {
                       letterSpacing: "1px",
                     }}
                   >
-                    {strong ? "STRONG" : "WEAK"}
+                    {statusLabel}
                   </td>
                 </tr>
               );

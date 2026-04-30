@@ -1342,8 +1342,27 @@ function CalibrationPanel({ snapshot, notes, loaded }: CalibrationPanelProps) {
             {FACTOR_KEYS.map((key) => {
               const f = snapshot.by_factor[key];
               if (!f) return null;
-              const strong = f.drift_flag === false;
-              const statusColor = strong ? "#22c55e" : "#d4a520";
+              // Status reflects the sign of edge_pp first, with drift_flag
+              // overriding to FLAGGED when set. drift_flag = |edge_pp| < 5
+              // upstream, so it fires on uncertain edges between -5 and +5.
+              let statusLabel: string;
+              let statusColor: string;
+              if (f.drift_flag === true) {
+                statusLabel = "⚠ FLAGGED";
+                statusColor = "#d4a520";
+              } else if (f.edge_pp >= 5) {
+                statusLabel = "STRONG";
+                statusColor = "#22c55e";
+              } else if (f.edge_pp > 0) {
+                statusLabel = "WEAK";
+                statusColor = "#888";
+              } else if (f.edge_pp === 0) {
+                statusLabel = "NEUTRAL";
+                statusColor = "#888";
+              } else {
+                statusLabel = "NEGATIVE";
+                statusColor = "#ef4444";
+              }
               const edgeRowColor = f.edge_pp >= 0 ? "#22c55e" : "#ef4444";
               return (
                 <tr key={key}>
@@ -1351,7 +1370,7 @@ function CalibrationPanel({ snapshot, notes, loaded }: CalibrationPanelProps) {
                   <td style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 12, color: "#e0e0e0", padding: "11px 14px 11px 0", borderBottom: "1px solid #2a2a2e40" }}>{fmtPct(f.pass_stats.win_rate * 100)}</td>
                   <td style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 12, color: "#e0e0e0", padding: "11px 14px 11px 0", borderBottom: "1px solid #2a2a2e40" }}>{fmtPct(f.fail_stats.win_rate * 100)}</td>
                   <td style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 12, color: edgeRowColor, padding: "11px 14px 11px 0", borderBottom: "1px solid #2a2a2e40" }}>{fmtSignedPp(f.edge_pp)}</td>
-                  <td style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 12, color: statusColor, fontWeight: 700, letterSpacing: "1px", padding: "11px 14px 11px 0", borderBottom: "1px solid #2a2a2e40" }}>{strong ? "STRONG" : "WEAK"}</td>
+                  <td style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 12, color: statusColor, fontWeight: 700, letterSpacing: "1px", padding: "11px 14px 11px 0", borderBottom: "1px solid #2a2a2e40" }}>{statusLabel}</td>
                 </tr>
               );
             })}
