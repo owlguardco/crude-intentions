@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { JournalWriteSchema } from '@/lib/validation/journal-schema';
-import { readJournal, writeJournalEntry, updateJournalOutcome } from '@/lib/journal/writer';
+import { readJournal, writeJournalEntry, updateJournalOutcome, type JournalEntry } from '@/lib/journal/writer';
 import { OutcomeUpdateSchema } from '@/lib/validation/journal-schema';
+import { kv } from '@/lib/kv';
+
+const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY;
 
 // ─── GET /api/journal ─────────────────────────────────────────────────────────
 // Returns full journal: decisions array + summary stats.
@@ -91,5 +94,52 @@ export async function PATCH(req: NextRequest) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.error('[JOURNAL] Outcome update error:', message);
     return NextResponse.json({ error: 'Failed to update outcome' }, { status: 500 });
+  }
+}
+
+// ─── DELETE /api/journal?filter=historical ───────────────────────────────────
+// Wipes all entries where historical === true && backtest_source === true,
+// then clears calibration:latest and calibration:history so the next close
+// produces a clean snapshot. Use this to re-import the backtest with the
+// correct historical timestamps after the timestamp-override fix.
+//
+// Auth: x-api-key header (INTERNAL_API_KEY).
+// Returns: { deleted, remaining }.
+export async function DELETE(req: NextRequest) {
+  if (!INTERNAL_API_KEY) {
+    return NextResponse.json({ error: 'INTERNAL_API_KEY not configured' }, { status: 500 });
+  }
+  const auth = req.headers.get('x-api-key');
+  if (auth !== INTERNAL_API_KEY) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const filter = req.nextUrl.searchParams.get('filter');
+  if (filter !== 'historical') {
+    return NextResponse.json(
+      { error: "Unsupported filter — only ?filter=historical is recognized" },
+      { status: 400 },
+    );
+  }
+
+  try {
+    const entries = (await kv.get<JournalEntry[]>('journal:entries')) ?? [];
+    const before = entries.length;
+    const remainingEntries = entries.filter(
+      (e) => !(e.historical === true && e.backtest_source === true),
+    );
+    const deleted = before - remainingEntries.length;
+
+    await kv.set('journal:entries', remainingEntries);
+    await kv.del('calibration:latest');
+    await kv.del('calibration:history');
+
+    console.log(`[JOURNAL] DELETE filter=historical: deleted=${deleted} remaining=${remainingEntries.length}`);
+
+    return NextResponse.json({ deleted, remaining: remainingEntries.length });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[JOURNAL] Delete error:', message);
+    return NextResponse.json({ error: 'Failed to delete entries', detail: message }, { status: 500 });
   }
 }
