@@ -22,6 +22,34 @@ const FACTOR_LABELS: Record<FactorKey, string> = {
 const fmtPct = (n: number) => `${n.toFixed(1)}%`;
 const fmtSignedPp = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(1)}`;
 
+function RBadge({ r }: { r: number | null | undefined }) {
+  if (r == null || !Number.isFinite(r)) return null;
+  const color =
+    r >= 2 ? "#22c55e"
+    : r >= 1 ? "#d4a520"
+    : r >= 0 ? "#666670"
+    : "#ef4444";
+  const sign = r >= 0 ? "+" : "";
+  return (
+    <span
+      title={`R-multiple ${sign}${r.toFixed(2)}`}
+      style={{
+        fontFamily: "JetBrains Mono, monospace",
+        fontSize: 10,
+        fontWeight: 700,
+        letterSpacing: "1px",
+        padding: "2px 7px",
+        borderRadius: 3,
+        color,
+        background: `${color}18`,
+        border: `1px solid ${color}40`,
+      }}
+    >
+      {sign}{r.toFixed(1)}R
+    </span>
+  );
+}
+
 function OutcomeBadge({ status, result }: { status: string; result?: string | null }) {
   const key = result || status;
   const map: Record<string, [string, string]> = {
@@ -807,7 +835,8 @@ function JournalView({
                         >LOG OUTCOME</button>
                       ) : (
                         <>
-                          <OutcomeBadge status={d.outcome?.status} result={d.outcome?.result} />
+                          <OutcomeBadge status={d.outcome?.status} />
+                          <RBadge r={d.outcome?.result_r} />
                           {d.backtest_source && (
                             <span title="Resolved via Yahoo Finance backtest" style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "1px", padding: "2px 5px", borderRadius: 3, color: "#888", background: "#2a2a2e40", border: "1px solid #2a2a2e" }}>
                               BT

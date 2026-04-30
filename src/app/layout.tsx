@@ -4,6 +4,7 @@ import "./globals.css";
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import EIABanner from "@/components/EIABanner";
 
 const NAV_ITEMS = [
   { href: "/", label: "DASHBOARD" },
@@ -439,16 +440,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           )}
 
           {/* EIA Active Banner */}
-          {eia.isActive && (
-            <div style={{
-              background: "rgba(239,68,68,0.08)", borderBottom: "1px solid rgba(239,68,68,0.3)",
-              padding: "8px 24px", flexShrink: 0,
-              fontFamily: "JetBrains Mono, monospace", fontSize: 11,
-              color: "#ef4444", letterSpacing: "1px",
-            }}>
-              ⚠ EIA WINDOW ACTIVE — AVOID NEW ENTRIES UNTIL 13:30 ET
-            </div>
-          )}
+          <EIABanner />
 
           {/* Page content */}
           <main style={{ flex: 1, overflow: "auto", padding: 24 }}>
