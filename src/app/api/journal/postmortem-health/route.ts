@@ -1,33 +1,22 @@
 /**
  * CRUDE INTENTIONS — Post-Mortem Health Check
  *
- * GET /api/journal/postmortem-health
+ * GET /api/journal/postmortem-health (no auth — public)
  *
  * Reports whether the env vars firePostMortem() depends on are set.
- * Returns booleans only — never echoes the values themselves.
+ * Returns booleans only — never echoes the values themselves so the
+ * route stays safe to expose unauthenticated.
  *
- * Auth: x-api-key (INTERNAL_API_KEY). The Railway health check stamps
- * the key on every poll. F-21 (2026-04-30 audit) closed the prior
- * unauthenticated info-disclosure surface.
+ * Curl from Railway / a script to confirm post-mortems will fire after
+ * a Vercel env-var change without having to wait for the next close.
  */
 
-import { NextRequest, NextResponse } from 'next/server';
-import { safeEq } from '@/lib/auth/safe-compare';
+import { NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY;
-
-export async function GET(req: NextRequest) {
-  if (!INTERNAL_API_KEY) {
-    return NextResponse.json({ error: 'INTERNAL_API_KEY not configured' }, { status: 500 });
-  }
-  const auth = req.headers.get('x-api-key');
-  if (!auth || !safeEq(auth, INTERNAL_API_KEY)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
+export async function GET() {
   const vercel_app_url_set = !!process.env.VERCEL_APP_URL;
   const internal_api_key_set = !!process.env.INTERNAL_API_KEY;
   const anthropic_api_key_set = !!process.env.ANTHROPIC_API_KEY;
