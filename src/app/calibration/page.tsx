@@ -259,7 +259,7 @@ export default function CalibrationPage() {
         />
         <Card
           label="EDGE HEALTH"
-          value={`${factorsStrong} / 8`}
+          value={`${factorsStrong} / ${FACTOR_KEYS.length}`}
           subtext="factors with strong edge"
           valueColor={edgeColor}
         />
