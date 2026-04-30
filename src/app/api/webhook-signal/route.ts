@@ -10,6 +10,7 @@ import { AdversarialScanSchema } from '@/lib/validation/journal-schema';
 import { kv } from '@/lib/kv';
 import { readContext, buildMarketMemoryPromptSection } from '@/lib/market-memory/context';
 import { computeEntryAlignment, type EmaStack } from '@/lib/mtf/consensus';
+import { checkRateLimit, rateLimitHeaders } from '@/lib/rate-limit';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY;
@@ -149,16 +150,21 @@ function mapChecklist(checklist: ChecklistItem[]) {
 }
 
 export async function POST(req: NextRequest) {
+  const rl = await checkRateLimit('webhook-signal:global', 60, 60);
+  const rlHeaders = rateLimitHeaders(rl);
+  if (!rl.allowed) {
+    return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429, headers: rlHeaders });
+  }
   const auth = req.headers.get('x-api-key');
   if (!INTERNAL_API_KEY || auth !== INTERNAL_API_KEY) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: rlHeaders });
   }
   let signal: WebhookSignal;
   try { signal = await req.json(); } catch {
-    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400, headers: rlHeaders });
   }
   if (!signal.direction || !signal.price || !signal.session) {
-    return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    return NextResponse.json({ error: 'Missing required fields' }, { status: 400, headers: rlHeaders });
   }
   const receivedAt = new Date().toISOString();
   try {
@@ -213,10 +219,10 @@ export async function POST(req: NextRequest) {
       received_at: receivedAt, signal, alfred, adversarial,
       journal: { id: journalWrite.id, integrity_hash: journalWrite.integrity_hash, auto_logged: true },
       ...(entry_alignment ? { entry_alignment } : {}),
-    });
+    }, { headers: rlHeaders });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.error('[WEBHOOK] Error:', message);
-    return NextResponse.json({ error: 'Signal processing failed', detail: message }, { status: 500 });
+    return NextResponse.json({ error: 'Signal processing failed', detail: message }, { status: 500, headers: rlHeaders });
   }
 }

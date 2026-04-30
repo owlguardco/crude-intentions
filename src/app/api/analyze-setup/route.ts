@@ -15,6 +15,7 @@ import {
 } from '@/lib/journal/calibration';
 import { computeMTFConsensus } from '@/lib/alfred/mtf-consensus';
 import { computeEntryAlignment } from '@/lib/mtf/consensus';
+import { checkRateLimit, rateLimitHeaders } from '@/lib/rate-limit';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -111,10 +112,18 @@ SCHEMA:
 
 // ─── POST /api/analyze-setup ──────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
+  const rl = await checkRateLimit('analyze-setup:global', 30, 60);
+  const rlHeaders = rateLimitHeaders(rl);
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: 'Rate limit exceeded — 30 requests per minute maximum' },
+      { status: 429, headers: rlHeaders },
+    );
+  }
   try {
     const contentLength = req.headers.get('content-length');
     if (contentLength && parseInt(contentLength) > 10 * 1024) {
-      return NextResponse.json({ error: 'Payload too large' }, { status: 413 });
+      return NextResponse.json({ error: 'Payload too large' }, { status: 413, headers: rlHeaders });
     }
 
     const body = await req.json();
@@ -123,7 +132,7 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) {
       return NextResponse.json(
         { error: 'Invalid input', details: parsed.error.flatten() },
-        { status: 400 }
+        { status: 400, headers: rlHeaders },
       );
     }
 
@@ -230,7 +239,7 @@ Score this setup. Return JSON only.`;
         predicted_accuracy,
         ...(mtf_consensus ? { mtf_consensus } : {}),
         ...(entry_alignment ? { entry_alignment } : {}),
-      });
+      }, { headers: rlHeaders });
     } catch (alfredErr) {
       console.error('[ALFRED FALLBACK] Anthropic unreachable, using fallback scorer:', alfredErr);
       const fallbackResult = runFallbackScorer(fallbackInput);
@@ -246,12 +255,12 @@ Score this setup. Return JSON only.`;
         ...fallbackResult,
         ...(mtf_consensus ? { mtf_consensus } : {}),
         ...(entry_alignment ? { entry_alignment } : {}),
-      });
+      }, { headers: rlHeaders });
     }
 
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.error('[ANALYZE-SETUP] Error:', message);
-    return NextResponse.json({ error: 'Analysis failed. Please try again.' }, { status: 500 });
+    return NextResponse.json({ error: 'Analysis failed. Please try again.' }, { status: 500, headers: rlHeaders });
   }
 }

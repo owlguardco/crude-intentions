@@ -27,10 +27,14 @@ export const kv = {
     }
   },
 
-  async set<T>(key: string, value: T): Promise<void> {
+  async set<T>(key: string, value: T, ttlSeconds?: number): Promise<void> {
     const r = await getClient();
     const serialised = typeof value === 'string' ? value : JSON.stringify(value);
-    await r.set(key, serialised);
+    if (typeof ttlSeconds === 'number' && Number.isFinite(ttlSeconds) && ttlSeconds > 0) {
+      await r.set(key, serialised, 'EX', Math.floor(ttlSeconds));
+    } else {
+      await r.set(key, serialised);
+    }
   },
 
   async del(key: string): Promise<void> {

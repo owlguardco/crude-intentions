@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { kv } from '@/lib/kv';
 import type { CalibrationEntry } from '@/lib/journal/calibration';
 import { closeTrade, type CloseStatus } from '@/lib/journal/close-trade';
+import { checkRateLimit, rateLimitHeaders } from '@/lib/rate-limit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -58,23 +59,29 @@ function reasonToStatus(reason: z.infer<typeof BodySchema>['close_reason']): Clo
 }
 
 export async function POST(req: NextRequest) {
+  const rl = await checkRateLimit('webhook-close:global', 60, 60);
+  const rlHeaders = rateLimitHeaders(rl);
+  if (!rl.allowed) {
+    return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429, headers: rlHeaders });
+  }
+
   const rawBody = await req.text();
   if (!verifyAuth(req, rawBody)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: rlHeaders });
   }
 
   let json: unknown;
   try {
     json = JSON.parse(rawBody);
   } catch {
-    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400, headers: rlHeaders });
   }
 
   const parsed = BodySchema.safeParse(json);
   if (!parsed.success) {
     return NextResponse.json(
       { error: 'Invalid input', details: parsed.error.flatten() },
-      { status: 400 },
+      { status: 400, headers: rlHeaders },
     );
   }
 
@@ -84,13 +91,13 @@ export async function POST(req: NextRequest) {
   const entries = (await kv.get<CalibrationEntry[]>('journal:entries')) ?? [];
   const entry = entries.find((e) => e.id === signal_id);
   if (!entry) {
-    return NextResponse.json({ error: `Entry ${signal_id} not found` }, { status: 404 });
+    return NextResponse.json({ error: `Entry ${signal_id} not found` }, { status: 404, headers: rlHeaders });
   }
   if (entry.outcome?.status && entry.outcome.status !== 'OPEN') {
-    return NextResponse.json({ error: 'Already closed' }, { status: 409 });
+    return NextResponse.json({ error: 'Already closed' }, { status: 409, headers: rlHeaders });
   }
   if (entry.direction === 'NO TRADE' || entry.entry_price == null) {
-    return NextResponse.json({ error: 'Entry not eligible to close' }, { status: 400 });
+    return NextResponse.json({ error: 'Entry not eligible to close' }, { status: 400, headers: rlHeaders });
   }
 
   if (ticks_pnl == null) {
@@ -109,10 +116,10 @@ export async function POST(req: NextRequest) {
   });
 
   if (!result.ok) {
-    return NextResponse.json({ error: result.error }, { status: result.status });
+    return NextResponse.json({ error: result.error }, { status: result.status, headers: rlHeaders });
   }
 
   fireCloseSidePostMortem(req, signal_id);
 
-  return NextResponse.json({ ok: true, signal_id, outcome: result.outcome });
+  return NextResponse.json({ ok: true, signal_id, outcome: result.outcome }, { headers: rlHeaders });
 }
