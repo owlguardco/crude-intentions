@@ -13,6 +13,7 @@ import { readContext, buildMarketMemoryPromptSection } from '@/lib/market-memory
 import { computeEntryAlignment } from '@/lib/mtf/consensus';
 import { checkRateLimit, rateLimitHeaders } from '@/lib/rate-limit';
 import { checkReplay } from '@/lib/replay-protect';
+import { safeEq } from '@/lib/auth/safe-compare';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY;
@@ -145,9 +146,13 @@ async function runAdversarialScan(signal: WebhookSignal, alfred: AlfredResult) {
   if (alfred.decision === 'NO TRADE') {
     return { verdict: 'SKIP' as const, concerns: ['ALFRED scored NO TRADE'], override_note: null };
   }
+  const safeReasoning = (alfred.reasoning ?? '')
+    .slice(0, 500)
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/```/g, "'''");
   const prompt = `CL setup: ${alfred.decision} @ ${signal.price} | Score: ${alfred.score}/12
 FVG ${signal.fvg_bottom}-${signal.fvg_top} | RSI: ${signal.rsi} | OVX: ${signal.ovx}
-Reasoning: ${alfred.reasoning}
+Reasoning: ${safeReasoning}
 Attack this setup. Return JSON only.`;
   const res = await client.messages.create({
     model: 'claude-sonnet-4-5', max_tokens: 600,
@@ -198,7 +203,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429, headers: rlHeaders });
   }
   const auth = req.headers.get('x-api-key');
-  if (!INTERNAL_API_KEY || auth !== INTERNAL_API_KEY) {
+  if (!INTERNAL_API_KEY || !auth || !safeEq(auth, INTERNAL_API_KEY)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: rlHeaders });
   }
   let rawBody: unknown;
@@ -278,13 +283,13 @@ export async function POST(req: NextRequest) {
           })
         : undefined;
     return NextResponse.json({
-      received_at: receivedAt, signal, alfred, adversarial,
+      received_at: receivedAt, alfred, adversarial,
       journal: { id: journalWrite.id, integrity_hash: journalWrite.integrity_hash, auto_logged: true },
       ...(entry_alignment ? { entry_alignment } : {}),
     }, { headers: rlHeaders });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
-    console.error('[WEBHOOK] Error:', message);
-    return NextResponse.json({ error: 'Signal processing failed', detail: message }, { status: 500, headers: rlHeaders });
+    console.error('[webhook-signal] processing error:', message);
+    return NextResponse.json({ error: 'Signal processing failed' }, { status: 500, headers: rlHeaders });
   }
 }

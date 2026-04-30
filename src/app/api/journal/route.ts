@@ -2,27 +2,35 @@ import { NextRequest, NextResponse } from 'next/server';
 import { JournalWriteSchema } from '@/lib/validation/journal-schema';
 import { readJournal, writeJournalEntry, type JournalEntry } from '@/lib/journal/writer';
 import { kv } from '@/lib/kv';
+import { checkRateLimit, rateLimitHeaders } from '@/lib/rate-limit';
+import { safeEq } from '@/lib/auth/safe-compare';
 
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY;
 
 function requireAuth(req: NextRequest): NextResponse | null {
   if (!INTERNAL_API_KEY) return NextResponse.json({ error: 'INTERNAL_API_KEY not configured' }, { status: 500 });
-  if (req.headers.get('x-api-key') !== INTERNAL_API_KEY) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const auth = req.headers.get('x-api-key');
+  if (!auth || !safeEq(auth, INTERNAL_API_KEY)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   return null;
 }
 
 // ─── GET /api/journal ─────────────────────────────────────────────────────────
 // Returns full journal: decisions array + summary stats.
 export async function GET() {
+  const rl = await checkRateLimit('journal:read', 60, 60);
+  const rlHeaders = rateLimitHeaders(rl);
+  if (!rl.allowed) {
+    return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429, headers: rlHeaders });
+  }
   try {
     const journal = await readJournal();
-    return NextResponse.json(journal);
+    return NextResponse.json(journal, { headers: rlHeaders });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.error('[JOURNAL] Read error:', message);
     return NextResponse.json(
-      { error: 'Could not read journal. Check data/safety_check_log.json for formatting errors.' },
-      { status: 500 }
+      { error: 'Could not read journal.' },
+      { status: 500, headers: rlHeaders }
     );
   }
 }
@@ -33,6 +41,11 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const unauth = requireAuth(req);
   if (unauth) return unauth;
+  const rl = await checkRateLimit('journal:write', 30, 60);
+  const rlHeaders = rateLimitHeaders(rl);
+  if (!rl.allowed) {
+    return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429, headers: rlHeaders });
+  }
   try {
     // ── Request size guard (10KB max) ──────────────────────────────────────
     const contentLength = req.headers.get('content-length');
@@ -83,8 +96,13 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: 'INTERNAL_API_KEY not configured' }, { status: 500 });
   }
   const auth = req.headers.get('x-api-key');
-  if (auth !== INTERNAL_API_KEY) {
+  if (!auth || !safeEq(auth, INTERNAL_API_KEY)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  const rl = await checkRateLimit('journal:delete', 5, 60);
+  const rlHeaders = rateLimitHeaders(rl);
+  if (!rl.allowed) {
+    return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429, headers: rlHeaders });
   }
 
   const filter = req.nextUrl.searchParams.get('filter');

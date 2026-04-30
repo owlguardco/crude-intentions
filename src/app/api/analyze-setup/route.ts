@@ -16,6 +16,8 @@ import {
 import { computeMTFConsensus } from '@/lib/alfred/mtf-consensus';
 import { computeEntryAlignment } from '@/lib/mtf/consensus';
 import { checkRateLimit, rateLimitHeaders } from '@/lib/rate-limit';
+import { buildFundamentalContext } from '@/lib/fundamental-scorer';
+import { safeEq } from '@/lib/auth/safe-compare';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY;
@@ -53,6 +55,14 @@ const SetupInputSchema = z.object({
   // v1.9 Layer 6 inputs
   asiaHigh:        z.number().finite().min(10).max(500).optional(),
   asiaLow:         z.number().finite().min(10).max(500).optional(),
+  // Fundamental layer inputs (optional — pre-computed upstream, no LLM cost)
+  m4Price:           z.number().finite().min(10).max(500).optional(),
+  inventoryZScore:   z.number().finite().min(-10).max(10).nullable().optional(),
+  momentum20:        z.number().finite().min(-1).max(1).nullable().optional(),
+  crackSpread321:    z.number().finite().min(-50).max(100).nullable().optional(),
+  month:             z.number().int().min(1).max(12).optional(),
+  volumeRatio:       z.number().finite().min(0).max(50).optional(),
+  triggerCandleConfirmed: z.boolean().optional(),
 }).strict();
 
 // ─── ALFRED response shape (F-5) ──────────────────────────────────────────────
@@ -191,7 +201,7 @@ export async function POST(req: NextRequest) {
     );
   }
   const auth = req.headers.get('x-api-key');
-  if (!INTERNAL_API_KEY || auth !== INTERNAL_API_KEY) {
+  if (!INTERNAL_API_KEY || !auth || !safeEq(auth, INTERNAL_API_KEY)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: rlHeaders });
   }
   try {
@@ -219,6 +229,27 @@ export async function POST(req: NextRequest) {
 
     const marketContext = await readContext(kv);
     const marketMemorySection = buildMarketMemoryPromptSection(marketContext);
+
+    // Quantitative fundamental layer (pure math, no LLM cost). Direction-aware
+    // so we only build it when weeklyBias picks a side; NEUTRAL/unset = skip
+    // (carry + alpha deltas are sign-flipped by direction and would be noise).
+    const fundamentalDirection: 'LONG' | 'SHORT' | null =
+      d.weeklyBias === 'LONG' || d.weeklyBias === 'SHORT' ? d.weeklyBias : null;
+    const fundamentalContext =
+      fundamentalDirection && typeof d.m4Price === 'number'
+        ? buildFundamentalContext(
+            { m1Price: d.price, m4Price: d.m4Price, direction: fundamentalDirection },
+            {
+              m1Price: d.price,
+              m4Price: d.m4Price,
+              inventoryZScore: d.inventoryZScore ?? null,
+              month: d.month ?? new Date().getUTCMonth() + 1,
+              momentum20: d.momentum20 ?? null,
+              crackSpread321: d.crackSpread321 ?? null,
+              direction: fundamentalDirection,
+            },
+          )
+        : null;
 
     const userPrompt = `Analyze this CL futures setup against the v1.9 A+ checklist:
 
@@ -263,10 +294,13 @@ Score this setup. Return JSON only.`;
     };
 
     try {
+      const fundamentalBlock = fundamentalContext
+        ? '\n\n' + fundamentalContext.promptBlock
+        : '';
       const response = await client.messages.create({
         model: 'claude-sonnet-4-5',
         max_tokens: 1000,
-        system: SYSTEM_PROMPT + '\n\n' + marketMemorySection,
+        system: SYSTEM_PROMPT + '\n\n' + marketMemorySection + fundamentalBlock,
         messages: [{ role: 'user', content: userPrompt }],
       });
 
@@ -337,6 +371,7 @@ Score this setup. Return JSON only.`;
         predicted_accuracy,
         ...(mtf_consensus ? { mtf_consensus } : {}),
         ...(entry_alignment ? { entry_alignment } : {}),
+        ...(fundamentalContext ? { fundamental_context: fundamentalContext } : {}),
       }, { headers: rlHeaders });
     } catch (alfredErr) {
       console.error('[ALFRED FALLBACK] Anthropic unreachable, using fallback scorer:', alfredErr);
@@ -353,6 +388,7 @@ Score this setup. Return JSON only.`;
         ...fallbackResult,
         ...(mtf_consensus ? { mtf_consensus } : {}),
         ...(entry_alignment ? { entry_alignment } : {}),
+        ...(fundamentalContext ? { fundamental_context: fundamentalContext } : {}),
       }, { headers: rlHeaders });
     }
 
