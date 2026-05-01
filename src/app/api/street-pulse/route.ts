@@ -3,16 +3,26 @@
  *
  * GET /api/street-pulse (no auth)
  *
- * Fetches three crude-relevant RSS feeds in parallel, scores each headline
+ * Fetches four crude-relevant RSS feeds in parallel, scores each headline
  * with a small bullish/bearish keyword bag, aggregates across the last 4
- * hours, and returns a label + top-4 headlines for the dashboard widget.
+ * hours, and returns:
+ *
+ *   { score, state, sources, cachedAt,
+ *     label, samples, headlines, updated_at, stale? }
+ *
+ * `state` is a 5-state ladder (BEAR / LEANING_BEAR / NEUTRAL /
+ * LEANING_BULL / BULL) derived from the composite `score`. `sources` is
+ * a per-feed breakdown (label / ok / score / detail). The legacy
+ * `label`, `samples`, `headlines`, `updated_at`, and `stale` fields
+ * remain for back-compat with StreetPulseWidget — both shapes are
+ * served from the same payload so consumers can migrate at their
+ * own pace.
  *
  * Cached in KV at `street:pulse:latest` for 10 minutes — feed providers
  * don't want hammering and the dashboard polls every 5 minutes.
  *
- * Silent degradation: when every feed fails, returns 200 with
- *   { score: 0, label: 'NEUTRAL', samples: 0, headlines: [], error: 'feed_unavailable' }
- * Never throws.
+ * Silent degradation: when every feed fails, returns 200 with an empty
+ * pulse plus `error: 'feed_unavailable'`. Never throws.
  */
 
 import { NextResponse } from 'next/server';
@@ -58,6 +68,15 @@ const BEARISH_KEYWORDS = [
 ] as const;
 
 export type Sentiment = 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+export type StreetPulseState =
+  | 'BEAR' | 'LEANING_BEAR' | 'NEUTRAL' | 'LEANING_BULL' | 'BULL';
+
+export interface SourceResult {
+  label: string;
+  ok: boolean;
+  score: number;
+  detail: string;
+}
 
 export interface StreetPulseHeadline {
   title: string;
@@ -67,7 +86,12 @@ export interface StreetPulseHeadline {
 }
 
 export interface StreetPulseResponse {
+  // v3 shape
   score: number;
+  state: StreetPulseState;
+  sources: SourceResult[];
+  cachedAt: string;
+  // back-compat shape (consumed by StreetPulseWidget)
   label: Sentiment;
   samples: number;
   headlines: StreetPulseHeadline[];
@@ -120,7 +144,7 @@ async function fetchFeed(url: string, source: string): Promise<ParsedItem[]> {
     const res = await fetch(url, {
       signal: ctrl.signal,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; CrudeIntentions/1.8)',
+        'User-Agent': 'Mozilla/5.0 (compatible; CrudeIntentions/1.9)',
         Accept: 'application/rss+xml, application/xml, text/xml',
       },
       cache: 'no-store',
@@ -153,13 +177,30 @@ function sentimentOf(score: number): Sentiment {
   return 'NEUTRAL';
 }
 
+function scoreToState(score: number): StreetPulseState {
+  if (score <= -40) return 'BEAR';
+  if (score <= -10) return 'LEANING_BEAR';
+  if (score < 10)   return 'NEUTRAL';
+  if (score < 40)   return 'LEANING_BULL';
+  return 'BULL';
+}
+
 function emptyPulse(error?: string): StreetPulseResponse {
+  const now = new Date().toISOString();
   return {
     score: 0,
+    state: 'NEUTRAL',
+    sources: FEEDS.map<SourceResult>((f) => ({
+      label: f.source,
+      ok: false,
+      score: 0,
+      detail: 'No data',
+    })),
+    cachedAt: now,
     label: 'NEUTRAL',
     samples: 0,
     headlines: [],
-    updated_at: new Date().toISOString(),
+    updated_at: now,
     ...(error ? { error } : {}),
   };
 }
@@ -185,13 +226,42 @@ export async function GET() {
   }
 
   const settled = await Promise.allSettled(FEEDS.map((f) => fetchFeed(f.url, f.source)));
-  const allItems: ParsedItem[] = [];
+  const cutoff = Date.now() - FRESH_WINDOW_MS;
+
+  type Scored = ParsedItem & { ts: number; subscore: number };
+  const sources: SourceResult[] = [];
+  const allScored: Scored[] = [];
   let liveFeeds = 0;
-  for (const r of settled) {
-    if (r.status === 'fulfilled') {
-      if (r.value.length > 0) liveFeeds++;
-      allItems.push(...r.value);
+
+  for (let i = 0; i < FEEDS.length; i++) {
+    const feed = FEEDS[i];
+    const r = settled[i];
+    const items = r.status === 'fulfilled' ? r.value : [];
+    if (items.length > 0) liveFeeds++;
+
+    const fresh: Scored[] = [];
+    for (const item of items) {
+      const ts = Date.parse(item.pubDate);
+      if (!Number.isFinite(ts) || ts < cutoff) continue;
+      fresh.push({ ...item, ts, subscore: scoreHeadline(item.title) });
     }
+    fresh.sort((a, b) => b.ts - a.ts);
+    allScored.push(...fresh);
+
+    const feedScore = fresh.reduce((s, x) => s + x.subscore, 0);
+    const ok = items.length > 0;
+    let detail: string;
+    if (!ok) {
+      detail = 'Feed offline';
+    } else if (fresh.length === 0) {
+      detail = 'No items in last 4h';
+    } else {
+      const top = fresh[0].title;
+      const truncated = top.length > 80 ? `${top.slice(0, 77)}...` : top;
+      const skew = feedScore > 0 ? 'bullish' : feedScore < 0 ? 'bearish' : 'flat';
+      detail = `${fresh.length} item${fresh.length === 1 ? '' : 's'} · ${skew} skew · top: ${truncated}`;
+    }
+    sources.push({ label: feed.source, ok, score: feedScore, detail });
   }
 
   if (liveFeeds === 0) {
@@ -226,21 +296,13 @@ export async function GET() {
     return NextResponse.json(result);
   }
 
-  const cutoff = Date.now() - FRESH_WINDOW_MS;
-  type Scored = ParsedItem & { ts: number; subscore: number };
-  const scored: Scored[] = [];
-  for (const item of allItems) {
-    const ts = Date.parse(item.pubDate);
-    if (!Number.isFinite(ts) || ts < cutoff) continue;
-    scored.push({ ...item, ts, subscore: scoreHeadline(item.title) });
-  }
-
-  const aggregate = scored.reduce((s, x) => s + x.subscore, 0);
+  const aggregate = allScored.reduce((s, x) => s + x.subscore, 0);
   const score = Math.max(-SCORE_CLAMP, Math.min(SCORE_CLAMP, aggregate));
+  const state = scoreToState(score);
   const label: Sentiment =
     score > 10 ? 'BULLISH' : score < -10 ? 'BEARISH' : 'NEUTRAL';
 
-  const top = [...scored]
+  const top = [...allScored]
     .sort((a, b) => b.ts - a.ts)
     .slice(0, 4)
     .map<StreetPulseHeadline>((x) => ({
@@ -250,16 +312,20 @@ export async function GET() {
       published_at: new Date(x.ts).toISOString(),
     }));
 
+  const now = new Date().toISOString();
   const result: StreetPulseResponse = {
     score,
+    state,
+    sources,
+    cachedAt: now,
     label,
-    samples: scored.length,
+    samples: allScored.length,
     headlines: top,
-    updated_at: new Date().toISOString(),
+    updated_at: now,
   };
 
   try {
-    await kv.set(KV_KEY, { ...result, cached_at: new Date().toISOString() });
+    await kv.set(KV_KEY, { ...result, cached_at: now });
   } catch {
     /* swallow */
   }
