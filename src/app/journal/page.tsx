@@ -7,6 +7,7 @@ import {
   type CalibrationSnapshot,
   type FactorKey,
 } from "@/lib/journal/calibration";
+import { generateSuggestedRuleChanges } from "@/lib/journal/observer";
 
 const FACTOR_LABELS: Record<FactorKey, string> = {
   ema_stack_aligned: "EMA Stack",
@@ -1438,6 +1439,79 @@ function CalibrationPanel({ snapshot, notes, loaded }: CalibrationPanelProps) {
           })}
         </div>
       </div>
+
+      {/* Observer suggested rule changes — display only, never writes
+          to rules.json. Pure heuristic over the snapshot; trader reads
+          these and edits rules.json manually if anything resonates. */}
+      {(() => {
+        const suggestions = generateSuggestedRuleChanges(snapshot, []);
+        return (
+          <div style={{
+            background: "#1a1a1e",
+            border: "1px solid #d4a52040",
+            borderTop: "2px solid #d4a520",
+            borderRadius: 6,
+            padding: 20,
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "3px", color: "#d4a520" }}>
+                OBSERVER SUGGESTIONS
+              </span>
+              <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "1px", color: "#666670" }}>
+                n≥8 · edge ≤ −15pp
+              </span>
+            </div>
+            <div style={{
+              fontFamily: "JetBrains Mono, monospace", fontSize: 9,
+              letterSpacing: "1px", color: "#666670", lineHeight: 1.55, marginBottom: 14,
+            }}>
+              These are observations, not instructions. Edit rules.json manually if you agree.
+            </div>
+            {suggestions.length === 0 ? (
+              <div style={{ fontFamily: "Inter, sans-serif", fontSize: 12, color: "#666670", fontStyle: "italic" }}>
+                No cohort or factor crossed the threshold — checklist holding within +15pp of baseline.
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {suggestions.map((s, i) => (
+                  <div key={i} style={{
+                    padding: "12px 14px",
+                    background: "#d4a52010",
+                    border: "1px solid #d4a52030",
+                    borderLeft: "3px solid #d4a520",
+                    borderRadius: 4,
+                  }}>
+                    <div style={{
+                      fontFamily: "JetBrains Mono, monospace", fontSize: 9,
+                      letterSpacing: "2px", color: "#d4a520", marginBottom: 6,
+                    }}>
+                      {s.factor.toUpperCase()}
+                    </div>
+                    <div style={{
+                      fontFamily: "Inter, sans-serif", fontSize: 13, color: "#e0e0e0",
+                      lineHeight: 1.5, marginBottom: 6,
+                    }}>
+                      {s.observation}
+                    </div>
+                    <div style={{
+                      fontFamily: "Inter, sans-serif", fontSize: 12, color: "#888",
+                      lineHeight: 1.5, marginBottom: 6, fontStyle: "italic",
+                    }}>
+                      → {s.suggested_change}
+                    </div>
+                    <div style={{
+                      fontFamily: "JetBrains Mono, monospace", fontSize: 10,
+                      color: "#666670", letterSpacing: "0.5px",
+                    }}>
+                      {s.evidence}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Observer notes */}
       <div style={{ background: "#1a1a1e", border: "1px solid #2a2a2e", borderRadius: 6, padding: 20 }}>
