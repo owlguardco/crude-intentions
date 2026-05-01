@@ -1,0 +1,15 @@
+# CRUDE INTENTIONS — Python backtest dependencies
+#
+# Used by:
+#   backtest_engine.py   — Yahoo Finance 5y daily backtest
+#   backtest_cli.py      — NinjaTrader CSV CLI wrapper + extended stats
+#   import_backtest.py   — POSTs backtest output to /api/journal/import
+#
+# Install:
+#   pip install -r requirements.txt
+
+pandas==2.2.3
+numpy==1.26.4
+vectorbt==0.27.2
+yfinance==0.2.50
+requests==2.32.3
