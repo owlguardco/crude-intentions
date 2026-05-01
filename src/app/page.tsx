@@ -47,6 +47,94 @@ interface SnapshotShape {
   overall?: { win_rate?: number };
 }
 
+// A+ Checklist card — collapsible with localStorage persistence.
+// Score is currently hardcoded against the demo CHECKLIST_ITEMS array
+// (12/12 PASS) since this card mirrors the static-bias tile pattern;
+// when a real checklist source lands, swap CHECKLIST_PASS for the live
+// per-item state and the header score will follow automatically.
+const CHECKLIST_COLLAPSED_KEY = "ci:checklistCollapsed";
+
+function ChecklistCard() {
+  // Default collapsed=true per spec, but read from localStorage on mount
+  // so the user's choice survives reloads. SSR-safe: useState initializer
+  // doesn't touch window.
+  const [collapsed, setCollapsed] = useState<boolean>(true);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const v = window.localStorage.getItem(CHECKLIST_COLLAPSED_KEY);
+    if (v === "0") setCollapsed(false);
+    if (v === "1") setCollapsed(true);
+  }, []);
+
+  const toggle = () => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem(CHECKLIST_COLLAPSED_KEY, next ? "1" : "0");
+      } catch {
+        // private mode / quota — ignore
+      }
+      return next;
+    });
+  };
+
+  const passed = CHECKLIST_ITEMS.length;          // demo data — all PASS
+  const total = CHECKLIST_ITEMS.length;
+
+  return (
+    <div style={{ background: "#1a1a1e", border: "1px solid #2a2a2e", borderRadius: 6, padding: 20 }}>
+      <button
+        type="button"
+        onClick={toggle}
+        aria-expanded={!collapsed}
+        style={{
+          all: "unset",
+          display: "flex",
+          width: "100%",
+          alignItems: "center",
+          justifyContent: "space-between",
+          cursor: "pointer",
+          marginBottom: collapsed ? 0 : 14,
+        }}
+      >
+        <span style={{
+          fontFamily: "JetBrains Mono, monospace",
+          fontSize: 9, letterSpacing: "3px", color: "#666670",
+        }}>
+          {collapsed ? `CHECKLIST ${passed}/${total}` : "A+ CHECKLIST"}
+        </span>
+        <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, color: "#666670" }}>
+          {collapsed ? "▼" : "▲"}
+        </span>
+      </button>
+
+      {!collapsed && (
+        <>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+            <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 28, fontWeight: 700, color: "#e0e0e0" }}>{passed}/{total}</span>
+            <GradeBadge grade="A+" />
+          </div>
+          {CHECKLIST_ITEMS.map((item) => (
+            <div key={item} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <span style={{ fontSize: 12, color: "#888" }}>{item}</span>
+              <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, color: "#22c55e", letterSpacing: "1px" }}>PASS</span>
+            </div>
+          ))}
+          <Link href="/pre-trade" style={{
+            display: "block", marginTop: 14, padding: "9px 0", borderRadius: 4,
+            background: "#d4a520", color: "#0d0d0f", textAlign: "center",
+            fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "2px",
+            fontWeight: 700, textDecoration: "none",
+          }}>
+            RUN FULL ANALYSIS →
+          </Link>
+        </>
+      )}
+    </div>
+  );
+}
+
 function Phase3GateWidget() {
   const [snapshot, setSnapshot] = useState<SnapshotShape | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -145,6 +233,53 @@ function Phase3GateWidget() {
           </span>
         )}
       </div>
+
+      {/* Trade-gate progress bar — visual proxy for the 20-trade live cohort
+          that gates Phase 3. Amber under target, green once cleared. The
+          full 5-condition list rendered below shows the same data textually,
+          but this gives a glanceable read at the top of the card. */}
+      {(() => {
+        const TARGET = 20;
+        const filled = Math.max(0, Math.min(liveClosed, TARGET));
+        const pct = (filled / TARGET) * 100;
+        const cleared = liveClosed >= TARGET;
+        const barColor = cleared ? "#22c55e" : "#d4a520";
+        return (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{
+              display: "flex", justifyContent: "space-between", alignItems: "center",
+              marginBottom: 8,
+            }}>
+              <span style={{
+                fontFamily: "JetBrains Mono, monospace", fontSize: 9,
+                letterSpacing: "2px", color: "#666670",
+              }}>
+                TRADE GATE {liveClosed} / {TARGET}
+              </span>
+              {cleared && (
+                <span style={{
+                  fontFamily: "JetBrains Mono, monospace", fontSize: 9,
+                  letterSpacing: "1px", color: "#22c55e", fontWeight: 700,
+                }}>
+                  ✓ CLEARED
+                </span>
+              )}
+            </div>
+            <div style={{
+              position: "relative", height: 6,
+              background: "#111115", border: "1px solid #2a2a2e",
+              borderRadius: 3, overflow: "hidden",
+            }}>
+              <div style={{
+                position: "absolute", top: 0, bottom: 0, left: 0,
+                width: `${pct}%`,
+                background: barColor,
+                transition: "width 0.4s ease",
+              }} />
+            </div>
+          </div>
+        );
+      })()}
 
       <div>
         {gates.map((g, i) => (
@@ -457,27 +592,8 @@ export default function DashboardPage() {
         </div>
 
         {/* A+ Checklist */}
-        <div style={{ background: "#1a1a1e", border: "1px solid #2a2a2e", borderRadius: 6, padding: 20 }}>
-          <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "3px", color: "#666670", marginBottom: 14 }}>A+ CHECKLIST</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
-            <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 28, fontWeight: 700, color: "#e0e0e0" }}>12/12</span>
-            <GradeBadge grade="A+" />
-          </div>
-          {CHECKLIST_ITEMS.map((item) => (
-            <div key={item} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-              <span style={{ fontSize: 12, color: "#888" }}>{item}</span>
-              <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, color: "#22c55e", letterSpacing: "1px" }}>PASS</span>
-            </div>
-          ))}
-          <Link href="/pre-trade" style={{
-            display: "block", marginTop: 14, padding: "9px 0", borderRadius: 4,
-            background: "#d4a520", color: "#0d0d0f", textAlign: "center",
-            fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "2px",
-            fontWeight: 700, textDecoration: "none",
-          }}>
-            RUN FULL ANALYSIS →
-          </Link>
-        </div>
+        <ChecklistCard />
+
 
         {/* Market Memory Widget */}
         <MarketMemoryWidget />

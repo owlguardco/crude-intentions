@@ -45,6 +45,36 @@ function getEIA() {
   return { hours, mins, isActive: diff < 10800000 && diff > 0 };
 }
 
+// NY Open countdown — "NY OPEN 2H 14M" pre-market, "NY SESSION OPEN"
+// during 9:30–11:45 AM ET, then counts to next day's 9:30. NY-local
+// minute-of-day is derived via Intl.DateTimeFormat so DST flips are
+// handled automatically; weekend skip is intentionally not done so
+// the chip stays useful during weekend prep work.
+function getNyOpenCountdown(): { label: string; color: string } {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(now);
+  const hourPart = parts.find((p) => p.type === "hour")?.value ?? "0";
+  const minPart  = parts.find((p) => p.type === "minute")?.value ?? "0";
+  const hour = parseInt(hourPart, 10);
+  const min  = parseInt(minPart, 10);
+  const totalMin = hour * 60 + min;
+  const openMin  = 9 * 60 + 30;   // 09:30 ET
+  const closeMin = 11 * 60 + 45;  // 11:45 ET
+
+  if (totalMin >= openMin && totalMin <= closeMin) {
+    return { label: "NY SESSION OPEN", color: "#22c55e" };
+  }
+  const minutesUntil = totalMin < openMin
+    ? openMin - totalMin
+    : (24 * 60 - totalMin) + openMin;
+  const h = Math.floor(minutesUntil / 60);
+  const m = minutesUntil % 60;
+  return { label: `NY OPEN ${h}H ${m}M`, color: "#666670" };
+}
+
 type AlfredStatus = "UP" | "FALLBACK" | "DOWN";
 const FALLBACK_AMBER_GRACE_MS = 5 * 60 * 1000; // 5 minutes after a fallback, dot stays amber
 
@@ -65,6 +95,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const [alfredStatus, setAlfredStatus] = useState<AlfredStatus>("UP");
   const [session, setSession] = useState(getSession());
   const [eia, setEia] = useState(getEIA());
+  const [nyCountdown, setNyCountdown] = useState(getNyOpenCountdown());
   const [geoFlag, setGeoFlag] = useState<{
     flagged: boolean;
     matched_at: string | null;
@@ -81,6 +112,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     const interval = setInterval(() => {
       setSession(getSession());
       setEia(getEIA());
+      setNyCountdown(getNyOpenCountdown());
       setAlfredStatus(deriveAlfredStatus());
     }, 30000);
     // Lightweight API health check
@@ -255,7 +287,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <span
               style={{
                 width: 7, height: 7, borderRadius: "50%", background: dotColor, flexShrink: 0,
-                animation: apiStatus === "checking" ? "pulse-dot 1.5s infinite" : "none",
+                animation:
+                  apiStatus === "online" && alfredStatus === "UP"
+                    ? "pulse-online 2s ease-in-out infinite"
+                    : apiStatus === "checking"
+                    ? "pulse-dot 1.5s infinite"
+                    : "none",
               }}
             />
             {!collapsed && (
@@ -326,6 +363,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               padding: "3px 8px", borderRadius: 3,
               color: "#666670", background: "#66667018", border: "1px solid #66667040",
             }}>OVX {ovxPrice != null ? ovxPrice.toFixed(1) : "—"}</span>
+
+            <span style={{
+              fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "1px",
+              padding: "3px 8px", borderRadius: 3,
+              color: nyCountdown.color,
+              background: `${nyCountdown.color}18`,
+              border: `1px solid ${nyCountdown.color}40`,
+            }}>{nyCountdown.label}</span>
 
             {(() => {
               if (!geoFlag) {

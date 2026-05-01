@@ -63,3 +63,11 @@ textarea:focus {
 .animate-pulse-dot {
   animation: pulse-dot 1.5s infinite;
 }
+
+/* Slower, subtle pulse used by the ALFRED status dot when online.
+   Combines opacity + a slight scale so it reads as "alive" without
+   being distracting in peripheral vision. */
+@keyframes pulse-online {
+  0%, 100% { opacity: 1;   transform: scale(1); }
+  50%      { opacity: 0.55; transform: scale(1.18); }
+}
