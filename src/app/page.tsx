@@ -141,7 +141,7 @@ function Widget({ title, borderColor = C.divider, onClick, children }: WidgetPro
     >
       <div style={{
         fontFamily: FONT_MONO, fontSize: 9, letterSpacing: "3px",
-        color: C.muted, marginBottom: 12,
+        color: C.muted, marginBottom: 10,
         display: "flex", justifyContent: "space-between", alignItems: "center",
       }}>
         <span>{title}</span>
@@ -474,12 +474,12 @@ function SentimentWidget({ pulse, onClick }: SentimentWidgetProps) {
           transition: "left 0.4s ease",
         }} />
       </div>
-      <div style={{ display: "flex", justifyContent: "space-between", fontFamily: FONT_MONO, fontSize: 8, letterSpacing: "1px", color: C.dim, marginBottom: "auto" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", fontFamily: FONT_MONO, fontSize: 8, letterSpacing: "1px", color: C.dim, marginBottom: 10 }}>
         <span>BEAR</span>
         <span>BULL</span>
       </div>
 
-      <div style={{ marginTop: 12, fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "1px", color: C.muted }}>
+      <div style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "1px", color: C.muted }}>
         score {score >= 0 ? "+" : ""}{score} · {samples} sample{samples === 1 ? "" : "s"}
       </div>
     </Widget>
@@ -521,7 +521,7 @@ function SupplyWidget({ supply }: SupplyWidgetProps) {
           AWAITING DATA
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {rows.map((r) => (
             <div key={r.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "2px", color: C.muted }}>
@@ -530,7 +530,7 @@ function SupplyWidget({ supply }: SupplyWidgetProps) {
               <span style={{
                 fontFamily: FONT_MONO, fontSize: 10, fontWeight: 700, letterSpacing: "1px",
                 color: r.color,
-                padding: "3px 8px", borderRadius: 3,
+                padding: "2px 7px", borderRadius: 3,
                 background: `${r.color}18`, border: `1px solid ${r.color}40`,
               }}>
                 {r.value}
@@ -553,7 +553,7 @@ function GeoWidget({ geo, onClick }: GeoWidgetProps) {
   const label = active ? "ALERT" : "CLEAR";
   return (
     <Widget title="GEO FLAG" borderColor={color} onClick={onClick}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
         <span
           aria-hidden
           style={{
@@ -570,16 +570,11 @@ function GeoWidget({ geo, onClick }: GeoWidgetProps) {
         </span>
       </div>
       {active && geo?.matched_keyword && (
-        <div style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "1px", color: C.amber, marginBottom: 6 }}>
-          ⚡ {geo.matched_keyword.toUpperCase()}
+        <div style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "1px", color: C.amber, marginBottom: 4 }}>
+          ⚡ {geo.matched_keyword.toUpperCase()} · <span style={{ color: C.muted }}>{fmtTimeAgo(geo.matched_at)}</span>
         </div>
       )}
-      {active && geo?.matched_at && (
-        <div style={{ fontFamily: FONT_MONO, fontSize: 9, letterSpacing: "1px", color: C.muted }}>
-          {fmtTimeAgo(geo.matched_at)}
-        </div>
-      )}
-      <div style={{ marginTop: "auto", fontFamily: FONT_MONO, fontSize: 9, letterSpacing: "2px", color: C.dim }}>
+      <div style={{ fontFamily: FONT_MONO, fontSize: 9, letterSpacing: "2px", color: C.dim }}>
         TRUTH SOCIAL · @realDonaldTrump
       </div>
       <style>{`@keyframes geo-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(1.2); } }`}</style>
@@ -649,7 +644,7 @@ export default function DashboardPage() {
   return (
     <div style={{
       display: "grid",
-      gridTemplateRows: "180px 280px 1fr",
+      gridTemplateRows: "180px 280px 160px",
       gap: 12,
       height: "100%",
       minHeight: 0,
