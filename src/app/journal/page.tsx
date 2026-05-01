@@ -995,6 +995,27 @@ function JournalView({
                           )}
                         </>
                       )}
+                      {d.shadow_result && (() => {
+                        const sr = d.shadow_result;
+                        const r = typeof sr.result_r === "number" ? sr.result_r : 0;
+                        const sign = r >= 0 ? "+" : "";
+                        const tip = `Shadow Log — counterfactual outcome from 24h walk-forward${sr.resolved_at ? ` · resolved ${new Date(sr.resolved_at).toLocaleString()}` : ""}`;
+                        return (
+                          <span
+                            title={tip}
+                            style={{
+                              fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "1px",
+                              padding: "2px 6px", borderRadius: 3,
+                              color: "#888",
+                              background: "#2a2a2e40",
+                              border: "1px dashed #444450",
+                              fontStyle: "italic",
+                            }}
+                          >
+                            WOULD HAVE: {sr.outcome} {sign}{r.toFixed(1)}R
+                          </span>
+                        );
+                      })()}
                       {d.postmortem && (
                         <button
                           onClick={(e) => { e.stopPropagation(); setExpandedPostmortem(expandedPostmortem === d.id ? null : d.id); }}

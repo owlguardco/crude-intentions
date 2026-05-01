@@ -60,6 +60,15 @@ export const JournalWriteSchema = z.object({
   alfred_fallback: z.boolean().default(false),
   postmortem: z.string().nullable().default(null),
   postmortem_at: z.string().nullable().optional(),
+  // Shadow Log — counterfactual outcome for NO TRADE / B-grade
+  // rejections, populated by /api/journal/shadow-resolve. Display-only;
+  // calibration cohort math ignores this field.
+  shadow_result: z.object({
+    outcome: z.enum(['WIN', 'LOSS', 'SCRATCH']),
+    result_r: z.number(),
+    resolved_at: z.string(),
+    exit_price: z.number(),
+  }).nullable().optional(),
   stop_price: z.number().finite().min(10).max(500).nullable().optional(),
   tp1_price: z.number().finite().min(10).max(500).nullable().optional(),
   tp2_price: z.number().finite().min(10).max(500).nullable().optional(),
