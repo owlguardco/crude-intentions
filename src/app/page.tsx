@@ -861,13 +861,13 @@ function RecentEvaluationsWidget({ entries }: RecentEvaluationsWidgetProps) {
 
 // ── Row 5 widgets ──────────────────────────────────────────────────────────
 
-interface ApexGateWidgetProps { entries: JournalEntryRow[] }
+interface DrawdownGateWidgetProps { entries: JournalEntryRow[] }
 
 const APEX_DAILY_LOSS_LIMIT = 1500;
 const APEX_MAX_DRAWDOWN = 2500;
 const APEX_TARGET = 1500;
 
-function ApexGateWidget({ entries }: ApexGateWidgetProps) {
+function DrawdownGateWidget({ entries }: DrawdownGateWidgetProps) {
   // Live-only — historical (backtest-imported) entries are excluded across
   // all three Apex metrics because the eval account only cares about real
   // capital risk. The 146 imported synthetic trades carry historical:true
@@ -933,7 +933,7 @@ function ApexGateWidget({ entries }: ApexGateWidgetProps) {
   ];
 
   return (
-    <Widget title="APEX GATE" borderColor={borderColor}>
+    <Widget title="DRAWDOWN GATE" borderColor={borderColor}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 10 }}>
         <span style={{
           fontFamily: FONT_MONO, fontSize: 14, fontWeight: 700, letterSpacing: "2px",
@@ -1264,7 +1264,7 @@ export default function DashboardPage() {
 
       {/* ROW 5 */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, minHeight: 0 }}>
-        <ApexGateWidget entries={journalEntries} />
+        <DrawdownGateWidget entries={journalEntries} />
         <CalibrationSnapshotWidget snapshot={snapshot} />
         <WeeklyBriefLiveWidget brief={weeklyBriefLive} />
       </div>
