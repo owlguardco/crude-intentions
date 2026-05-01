@@ -12,6 +12,7 @@ const NAV_ITEMS = [
   { href: "/position", label: "POSITION" },
   { href: "/journal", label: "JOURNAL" },
   { href: "/calibration", label: "CALIBRATION" },
+  { href: "/news", label: "NEWS" },
   { href: "/eia", label: "EIA" },
   { href: "/prompts", label: "PROMPTS" },
   { href: "/settings", label: "SETTINGS" },
