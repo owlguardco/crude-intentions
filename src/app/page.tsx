@@ -741,6 +741,8 @@ interface JournalEntryRow {
   direction?: "LONG" | "SHORT" | "NO TRADE";
   grade?: string;
   score?: number;
+  historical?: boolean;
+  backtest_source?: boolean;
   outcome?: {
     status?: string;
     result?: number | null;          // ticks
@@ -753,7 +755,19 @@ interface JournalEntryRow {
 interface RecentEvaluationsWidgetProps { entries: JournalEntryRow[] }
 
 function RecentEvaluationsWidget({ entries }: RecentEvaluationsWidgetProps) {
-  const rows = entries.slice(0, 5);
+  // Historical (backtest-imported) entries all carry grade='F' from the
+  // backtest_engine.py stamp — surfacing them in "RECENT" buried any
+  // real ALFRED-graded entry behind 146 synthetic Fs. Filter to live
+  // only here.
+  const liveOnly = entries.filter((e) => e.historical !== true);
+  // Diagnostic — surfaces the actual grade field value of the first
+  // entry on load so a "everything is F" symptom can be checked
+  // against the underlying data without round-tripping the API.
+  if (typeof window !== "undefined" && liveOnly[0]) {
+    // eslint-disable-next-line no-console
+    console.debug("[RecentEvaluations] first live entry grade=", liveOnly[0].grade, "score=", liveOnly[0].score);
+  }
+  const rows = liveOnly.slice(0, 5);
   return (
     <Widget title="RECENT EVALUATIONS">
       {rows.length === 0 ? (
@@ -854,25 +868,34 @@ const APEX_MAX_DRAWDOWN = 2500;
 const APEX_TARGET = 1500;
 
 function ApexGateWidget({ entries }: ApexGateWidgetProps) {
-  // Today's net P&L from journal entries closed today (UTC date match).
-  // Drawdown proxy: rolling 30-day cumulative loss (negative dollars only).
-  // Loss streak: consecutive LOSS outcomes from most-recent backwards.
-  const today = new Date().toISOString().slice(0, 10);
+  // Live-only — historical (backtest-imported) entries are excluded across
+  // all three Apex metrics because the eval account only cares about real
+  // capital risk. The 146 imported synthetic trades carry historical:true
+  // and were inflating drawdown to ~$288k before this filter was in place.
+  const liveEntries = entries.filter((e) => e.historical !== true);
+
+  // Today's local-date P&L from live entries closed today.
+  const todayLocal = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD
   let todayPnL = 0;
   let todayClosedCount = 0;
   let drawdown = 0;
   let lossStreak = 0;
   let counting = true;
 
-  for (const e of entries) {
+  for (const e of liveEntries) {
     const status = e.outcome?.status;
     const dollars = typeof e.outcome?.result_dollars === "number" ? e.outcome.result_dollars : 0;
-    const closeDay = e.outcome?.close_timestamp?.slice(0, 10) ?? null;
-    if (closeDay === today && (status === "WIN" || status === "LOSS" || status === "SCRATCH")) {
+    const closeIso = e.outcome?.close_timestamp ?? null;
+    const closeDayLocal = closeIso ? new Date(closeIso).toLocaleDateString("en-CA") : null;
+    if (closeDayLocal === todayLocal && (status === "WIN" || status === "LOSS" || status === "SCRATCH")) {
       todayPnL += dollars;
       todayClosedCount++;
     }
-    if (dollars < 0) drawdown += Math.abs(dollars);
+    // Drawdown — count LOSS-status entries only (matches the spec; a
+    // SCRATCH that booked a tiny negative no longer counts toward DD).
+    if (status === "LOSS" && dollars < 0) {
+      drawdown += Math.abs(dollars);
+    }
     if (counting) {
       if (status === "LOSS") lossStreak++;
       else if (status === "WIN" || status === "SCRATCH") counting = false;
