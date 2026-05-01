@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import logData from "@/data/safety_check_log.json";
-import weeklyBias from "@/data/weekly_bias.json";
 
 const C = {
   bg: "#0d0d0f",
@@ -157,22 +156,57 @@ function Widget({ title, borderColor = C.divider, onClick, children }: WidgetPro
 
 // ── Row 1 widgets ──────────────────────────────────────────────────────────
 
-function WeeklyBiasWidget() {
-  const bias = weeklyBias as { direction: "LONG" | "SHORT" | "NEUTRAL"; strength: string; last_updated: string };
-  const color = bias.direction === "LONG" ? C.green : bias.direction === "SHORT" ? C.red : C.amber;
+interface WeeklyBiasWidgetProps { ctx: MarketContextResponse | null }
+
+function WeeklyBiasWidget({ ctx }: WeeklyBiasWidgetProps) {
+  const dir = ctx?.current_bias ?? null;
+  const color = dir === "LONG" ? C.green : dir === "SHORT" ? C.red : dir === "NEUTRAL" ? C.amber : C.dim;
+
+  if (!dir) {
+    return (
+      <Widget title="WEEKLY BIAS" borderColor={C.dim}>
+        <div style={{
+          flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
+          fontFamily: FONT_MONO, fontSize: 11, letterSpacing: "2px", color: C.dim,
+        }}>
+          NO BIAS SET
+        </div>
+      </Widget>
+    );
+  }
+
+  const strength = ctx?.bias_strength ?? "—";
+  const setAt = ctx?.bias_set_at ?? ctx?.last_updated;
+  const invalidation = ctx?.invalidation_notes ?? null;
+
   return (
     <Widget title="WEEKLY BIAS" borderColor={color}>
       <div style={{
         fontFamily: FONT_MONO, fontSize: 30, fontWeight: 700, letterSpacing: "3px",
         color, lineHeight: 1, marginBottom: 8,
       }}>
-        {bias.direction}
+        {dir}
       </div>
-      <div style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "2px", color: C.muted, marginBottom: "auto" }}>
-        {bias.strength} CONVICTION
+      <div style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "2px", color: C.muted }}>
+        {strength} CONVICTION
       </div>
-      <div style={{ fontFamily: FONT_MONO, fontSize: 9, color: C.dim, marginTop: 12, letterSpacing: "1px" }}>
-        SUNDAY · {new Date(bias.last_updated).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+      {invalidation && (
+        <div style={{
+          fontFamily: FONT_MONO, fontSize: 9, color: C.red, letterSpacing: "1px",
+          marginTop: 10, lineHeight: 1.4,
+          overflow: "hidden", textOverflow: "ellipsis",
+          display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
+        }}>
+          ✗ {invalidation}
+        </div>
+      )}
+      <div style={{
+        fontFamily: FONT_MONO, fontSize: 9, color: C.dim,
+        marginTop: "auto", letterSpacing: "1px",
+      }}>
+        {setAt
+          ? `SUNDAY · ${new Date(setAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
+          : "SUNDAY · —"}
       </div>
     </Widget>
   );
@@ -593,6 +627,8 @@ interface WeeklyBriefSnippet {
 interface MarketContextResponse {
   current_bias?: "LONG" | "SHORT" | "NEUTRAL";
   bias_strength?: "STRONG" | "MODERATE" | "WEAK";
+  bias_set_at?: string;
+  invalidation_notes?: string | null;
   last_updated?: string;
   weekly_bias?: WeeklyBriefSnippet | null;
   supply_context?: { supply_bias?: "BEARISH" | "NEUTRAL" | "BULLISH" | null } | null;
@@ -1236,7 +1272,7 @@ export default function DashboardPage() {
     }}>
       {/* ROW 1 */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, minHeight: 0 }}>
-        <WeeklyBiasWidget />
+        <WeeklyBiasWidget ctx={marketCtx} />
         <AlfredWidget snapshot={snapshot} apiOnline={apiOnline} />
         <OvxWidget ovx={ovx} />
         <Phase3Widget snapshot={snapshot} />
