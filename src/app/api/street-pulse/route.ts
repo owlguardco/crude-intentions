@@ -25,7 +25,7 @@
  * pulse plus `error: 'feed_unavailable'`. Never throws.
  */
 
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { kv } from '@/lib/kv';
 import { checkRateLimit, rateLimitHeaders } from '@/lib/rate-limit';
 
@@ -205,24 +205,33 @@ function emptyPulse(error?: string): StreetPulseResponse {
   };
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const rl = await checkRateLimit('street-pulse:read', 20, 60);
   const rlHeaders = rateLimitHeaders(rl);
   if (!rl.allowed) {
     return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429, headers: rlHeaders });
   }
-  // Cache check
-  try {
-    const cached = await kv.get<CachedPulse>(KV_KEY);
-    if (cached?.cached_at) {
-      const age = Date.now() - Date.parse(cached.cached_at);
-      if (Number.isFinite(age) && age < CACHE_MAX_AGE_MS) {
-        const { cached_at: _drop, ...payload } = cached;
-        return NextResponse.json(payload);
+
+  // ?refresh=1 forces a live fetch and skips the cache read. The fresh
+  // result is still written back to KV at the end of the handler so
+  // subsequent un-refreshed callers see the new payload. Rate limit
+  // fires first, so a refresh storm still hits the 20/min ceiling.
+  const refresh = req.nextUrl.searchParams.get('refresh') === '1';
+
+  // Cache check (skipped when ?refresh=1)
+  if (!refresh) {
+    try {
+      const cached = await kv.get<CachedPulse>(KV_KEY);
+      if (cached?.cached_at) {
+        const age = Date.now() - Date.parse(cached.cached_at);
+        if (Number.isFinite(age) && age < CACHE_MAX_AGE_MS) {
+          const { cached_at: _drop, ...payload } = cached;
+          return NextResponse.json(payload);
+        }
       }
+    } catch {
+      // fall through to fresh fetch
     }
-  } catch {
-    // fall through to fresh fetch
   }
 
   const settled = await Promise.allSettled(FEEDS.map((f) => fetchFeed(f.url, f.source)));
