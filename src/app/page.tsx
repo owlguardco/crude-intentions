@@ -26,6 +26,22 @@ function fmtBriefTime(iso: string): string {
   } catch { return iso; }
 }
 
+function fmtLastRun(iso: string): string {
+  // "LAST RUN: Sunday MM/DD at HH:MM ET" — cron always fires Sunday
+  // 20:00 UTC, so the day is always Sunday in the operator's mental
+  // model. Day name still pulled from the actual date so a missed-fire
+  // Tuesday backfill stays accurate.
+  try {
+    const d = new Date(iso);
+    const day = d.toLocaleString("en-US", { weekday: "long", timeZone: "America/New_York" });
+    const mmdd = d.toLocaleString("en-US", { month: "2-digit", day: "2-digit", timeZone: "America/New_York" });
+    const hhmm = d.toLocaleString("en-US", {
+      hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "America/New_York",
+    });
+    return `LAST RUN: ${day} ${mmdd} at ${hhmm} ET`;
+  } catch { return `LAST RUN: ${iso}`; }
+}
+
 interface SnapshotShape {
   totals?: { trades_closed?: number; historical_closed?: number };
   overall?: { win_rate?: number };
@@ -253,71 +269,95 @@ function WeeklyBriefWidget() {
     return () => { cancelled = true; clearInterval(t); };
   }, []);
 
-  // Empty state — borderless one-liner before first brief lands
+  // Empty card — fires when KV has no weekly_bias yet (Sunday cron
+  // hasn't run or the response was missing the field).
   if (loaded && !brief) {
     return (
-      <div style={{ padding: "8px 0", fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "3px", color: "#666670" }}>
-        WEEKLY BRIEF · PENDING — runs Sunday 20:00 UTC
+      <div style={{
+        background: "#1a1a1e", border: "1px solid #2a2a2e", borderRadius: 6,
+        padding: 20, borderTop: "3px solid #2a2a2e",
+      }}>
+        <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "3px", color: "#d4a520", marginBottom: 14 }}>
+          WEEKLY BIAS
+        </div>
+        <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, letterSpacing: "2px", color: "#666670" }}>
+          NO BRIEF YET — runs Sunday 8PM ET
+        </div>
       </div>
     );
   }
   if (!brief) return null;
 
-  const dirColor = brief.direction === "LONG" ? "#22c55e" : brief.direction === "SHORT" ? "#ef4444" : "#888";
+  const dirColor =
+    brief.direction === "LONG"  ? "#22c55e" :
+    brief.direction === "SHORT" ? "#ef4444" :
+                                  "#d4a520"; // NEUTRAL = amber per spec
+
   const macroChip = (label: string, value: number | null, fmt = (v: number) => v.toFixed(1)) => {
     const display = value == null ? "—" : fmt(value);
     return (
       <span style={{
         fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "1px",
-        padding: "3px 8px", borderRadius: 3,
-        color: value == null ? "#444450" : "#888",
+        padding: "4px 9px", borderRadius: 3,
+        color: value == null ? "#444450" : "#e0e0e0",
         background: "#11111580", border: "1px solid #2a2a2e",
       }}>
-        {label} {display}
+        <span style={{ color: "#666670", marginRight: 5 }}>{label}</span>{display}
       </span>
     );
   };
 
   return (
-    <div style={{ background: "#1a1a1e", border: "1px solid #2a2a2e", borderRadius: 6, padding: 20 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+    <div style={{
+      background: "#1a1a1e", border: "1px solid #2a2a2e", borderRadius: 6,
+      padding: 20, borderTop: `3px solid ${dirColor}`,
+    }}>
+      {/* Header — title + last-run timestamp */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "3px", color: "#d4a520" }}>
-          WEEKLY BRIEF
+          WEEKLY BIAS
         </div>
         <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "1px", color: "#666670" }}>
-          {fmtBriefTime(brief.generated_at)}
+          {fmtLastRun(brief.generated_at)}
         </div>
       </div>
 
-      {/* Direction + strength */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+      {/* Large direction + strength */}
+      <div style={{ display: "flex", alignItems: "baseline", gap: 14, marginBottom: 12 }}>
         <span style={{
-          fontFamily: "JetBrains Mono, monospace", fontSize: 12, fontWeight: 700, letterSpacing: "2px",
-          padding: "3px 10px", borderRadius: 3, color: dirColor,
-          background: `${dirColor}18`, border: `1px solid ${dirColor}40`,
-        }}>{brief.direction}</span>
-        <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, letterSpacing: "1px", color: "#888" }}>
-          {brief.strength}
+          fontFamily: "JetBrains Mono, monospace", fontSize: 34, fontWeight: 700,
+          letterSpacing: "4px", color: dirColor, lineHeight: 1,
+        }}>
+          {brief.direction}
+        </span>
+        <span style={{
+          fontFamily: "JetBrains Mono, monospace", fontSize: 11, letterSpacing: "2px",
+          color: "#888",
+        }}>
+          {brief.strength} CONVICTION
         </span>
       </div>
 
       {/* Rationale */}
       {brief.rationale && (
-        <div style={{ fontFamily: "Inter, sans-serif", fontSize: 12, color: "#888", lineHeight: 1.55, marginBottom: 12 }}>
+        <div style={{
+          fontFamily: "Inter, sans-serif", fontSize: 12, color: "#888",
+          lineHeight: 1.55, marginBottom: 14, maxWidth: 720,
+        }}>
           {brief.rationale}
         </div>
       )}
 
-      {/* Invalidation */}
+      {/* Invalidation (kept — useful operational caveat) */}
       {brief.invalidation && (
-        <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "1px", color: "#ef4444", marginBottom: 12 }}>
-          ✗ INVALIDATED IF: <span style={{ fontFamily: "Inter, sans-serif", letterSpacing: 0 }}>{brief.invalidation}</span>
+        <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "1px", color: "#ef4444", marginBottom: 14 }}>
+          ✗ INVALIDATED IF: <span style={{ fontFamily: "Inter, sans-serif", letterSpacing: 0, color: "#888" }}>{brief.invalidation}</span>
         </div>
       )}
 
-      {/* Key levels */}
+      {/* Key levels (kept) */}
       {(brief.key_levels.resistance.length > 0 || brief.key_levels.support.length > 0) && (
-        <div style={{ display: "flex", gap: 16, marginBottom: 12, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 16, marginBottom: 14, flexWrap: "wrap" }}>
           {brief.key_levels.resistance.length > 0 && (
             <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, color: "#ef4444", letterSpacing: "1px" }}>
               RESISTANCE: <span style={{ color: "#888" }}>{brief.key_levels.resistance.join(", ")}</span>
