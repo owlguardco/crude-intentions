@@ -740,7 +740,14 @@ interface JournalEntryRow {
   timestamp?: string;
   direction?: "LONG" | "SHORT" | "NO TRADE";
   grade?: string;
-  outcome?: { status?: string; result?: string | null };
+  score?: number;
+  outcome?: {
+    status?: string;
+    result?: number | null;          // ticks
+    result_r?: number | null;        // R-multiple
+    result_dollars?: number | null;
+    close_timestamp?: string | null;
+  };
 }
 
 interface RecentEvaluationsWidgetProps { entries: JournalEntryRow[] }
@@ -768,14 +775,22 @@ function RecentEvaluationsWidget({ entries }: RecentEvaluationsWidgetProps) {
                 grade === "F"  ? C.red :
                 C.muted;
               const status = d.outcome?.status ?? "OPEN";
-              const result = d.outcome?.result ?? null;
-              const sKey = result ?? status;
-              const sColor =
-                sKey === "WIN" ? C.green :
-                sKey === "LOSS" ? C.red :
-                sKey === "OPEN" ? C.amber :
-                sKey === "SCRATCH" ? C.muted :
-                C.muted;
+              const rMult = typeof d.outcome?.result_r === "number" ? d.outcome.result_r : null;
+              // Right-hand badge: prefer R-multiple when the trade has
+              // closed and we have a valid number; fall back to the status
+              // text (OPEN / WIN / LOSS / SCRATCH).
+              const isClosed = status === "WIN" || status === "LOSS" || status === "SCRATCH";
+              const showR = isClosed && rMult !== null && Number.isFinite(rMult);
+              const sLabel = showR
+                ? `${rMult >= 0 ? "+" : ""}${rMult.toFixed(1)}r`
+                : status.toUpperCase();
+              const sColor = showR
+                ? rMult > 0 ? C.green : rMult < 0 ? C.red : C.muted
+                : status === "WIN" ? C.green
+                : status === "LOSS" ? C.red
+                : status === "OPEN" ? C.amber
+                : status === "SCRATCH" ? C.muted
+                : C.muted;
               return (
                 <div key={d.id} style={{
                   display: "grid",
@@ -810,7 +825,7 @@ function RecentEvaluationsWidget({ entries }: RecentEvaluationsWidgetProps) {
                     background: `${sColor}18`, border: `1px solid ${sColor}40`,
                     justifySelf: "end",
                   }}>
-                    {String(sKey).toUpperCase()}
+                    {sLabel}
                   </span>
                 </div>
               );
@@ -830,6 +845,273 @@ function RecentEvaluationsWidget({ entries }: RecentEvaluationsWidgetProps) {
   );
 }
 
+// ── Row 5 widgets ──────────────────────────────────────────────────────────
+
+interface ApexGateWidgetProps { entries: JournalEntryRow[] }
+
+const APEX_DAILY_LOSS_LIMIT = 1500;
+const APEX_MAX_DRAWDOWN = 2500;
+const APEX_TARGET = 1500;
+
+function ApexGateWidget({ entries }: ApexGateWidgetProps) {
+  // Today's net P&L from journal entries closed today (UTC date match).
+  // Drawdown proxy: rolling 30-day cumulative loss (negative dollars only).
+  // Loss streak: consecutive LOSS outcomes from most-recent backwards.
+  const today = new Date().toISOString().slice(0, 10);
+  let todayPnL = 0;
+  let todayClosedCount = 0;
+  let drawdown = 0;
+  let lossStreak = 0;
+  let counting = true;
+
+  for (const e of entries) {
+    const status = e.outcome?.status;
+    const dollars = typeof e.outcome?.result_dollars === "number" ? e.outcome.result_dollars : 0;
+    const closeDay = e.outcome?.close_timestamp?.slice(0, 10) ?? null;
+    if (closeDay === today && (status === "WIN" || status === "LOSS" || status === "SCRATCH")) {
+      todayPnL += dollars;
+      todayClosedCount++;
+    }
+    if (dollars < 0) drawdown += Math.abs(dollars);
+    if (counting) {
+      if (status === "LOSS") lossStreak++;
+      else if (status === "WIN" || status === "SCRATCH") counting = false;
+    }
+  }
+
+  const dailyLossUsed = Math.max(0, -todayPnL);
+  const dailyLossPct = (dailyLossUsed / APEX_DAILY_LOSS_LIMIT) * 100;
+  const drawdownPct = (drawdown / APEX_MAX_DRAWDOWN) * 100;
+  const breached = dailyLossUsed >= APEX_DAILY_LOSS_LIMIT || drawdown >= APEX_MAX_DRAWDOWN;
+  const warn = !breached && (dailyLossPct >= 80 || drawdownPct >= 80);
+  const borderColor = breached ? C.red : warn ? C.amber : C.green;
+
+  const rows: Array<{ label: string; value: string; color: string }> = [
+    {
+      label: "DAILY LOSS",
+      value: `$${dailyLossUsed.toFixed(0)} / $${APEX_DAILY_LOSS_LIMIT}`,
+      color: dailyLossUsed >= APEX_DAILY_LOSS_LIMIT ? C.red : dailyLossPct >= 80 ? C.amber : C.text,
+    },
+    {
+      label: "DRAWDOWN",
+      value: `$${drawdown.toFixed(0)} / $${APEX_MAX_DRAWDOWN}`,
+      color: drawdown >= APEX_MAX_DRAWDOWN ? C.red : drawdownPct >= 80 ? C.amber : C.text,
+    },
+    {
+      label: "TARGET",
+      value: `$${APEX_TARGET}`,
+      color: C.muted,
+    },
+    {
+      label: "LOSS STREAK",
+      value: lossStreak === 0 ? "0" : `${lossStreak}`,
+      color: lossStreak >= 3 ? C.red : lossStreak >= 2 ? C.amber : C.text,
+    },
+  ];
+
+  return (
+    <Widget title="APEX GATE" borderColor={borderColor}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 10 }}>
+        <span style={{
+          fontFamily: FONT_MONO, fontSize: 14, fontWeight: 700, letterSpacing: "2px",
+          color: borderColor,
+        }}>
+          {breached ? "BREACHED" : warn ? "WARN" : "CLEAR"}
+        </span>
+        <span style={{ fontFamily: FONT_MONO, fontSize: 9, color: C.muted, letterSpacing: "1px" }}>
+          EVAL · {todayClosedCount} TRADES TODAY
+        </span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+        {rows.map((r) => (
+          <div key={r.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontFamily: FONT_MONO, fontSize: 9, letterSpacing: "2px", color: C.muted }}>
+              {r.label}
+            </span>
+            <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: r.color, letterSpacing: "1px" }}>
+              {r.value}
+            </span>
+          </div>
+        ))}
+      </div>
+    </Widget>
+  );
+}
+
+interface CalibrationSnapshotWidgetProps { snapshot: CalibrationSnapshot | null }
+
+interface CalibrationSnapshotExtended extends CalibrationSnapshot {
+  totals?: {
+    trades_closed?: number;
+    historical_closed?: number;
+    win_rate?: number;
+    avg_win_r?: number;
+    avg_loss_r?: number;
+    expectancy_r?: number;
+  };
+  by_grade?: Record<string, { trades?: number; win_rate?: number }>;
+}
+
+function CalibrationSnapshotWidget({ snapshot }: CalibrationSnapshotWidgetProps) {
+  const snap = snapshot as CalibrationSnapshotExtended | null;
+  const trades = snap?.totals?.trades_closed ?? 0;
+  // overall.win_rate is stored 0–100
+  const winRate = snap?.overall?.win_rate ?? 0;
+  const avgWinR = snap?.totals?.avg_win_r;
+  const avgLossR = snap?.totals?.avg_loss_r;
+  const expR = snap?.totals?.expectancy_r;
+  const minTrades = 5;
+
+  // Best / worst grade cohort by win_rate (only buckets with >= 3 trades)
+  let best: { label: string; rate: number } | null = null;
+  let worst: { label: string; rate: number } | null = null;
+  if (snap?.by_grade) {
+    for (const [g, b] of Object.entries(snap.by_grade)) {
+      const t = b.trades ?? 0;
+      const r = (b.win_rate ?? 0) * 100;
+      if (t < 3) continue;
+      if (best === null || r > best.rate) best = { label: g, rate: r };
+      if (worst === null || r < worst.rate) worst = { label: g, rate: r };
+    }
+  }
+
+  const borderColor =
+    trades < minTrades ? C.dim :
+    winRate > 55 ? C.green :
+    winRate >= 45 ? C.amber :
+    C.red;
+
+  if (trades < minTrades) {
+    return (
+      <Widget title="CALIBRATION" borderColor={borderColor}>
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", gap: 6 }}>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 11, letterSpacing: "2px", color: C.dim }}>
+            INSUFFICIENT DATA
+          </span>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.muted, letterSpacing: "1px" }}>
+            {trades} / 20 TRADES
+          </span>
+        </div>
+      </Widget>
+    );
+  }
+
+  const fmtR = (v: number | undefined): string =>
+    typeof v === "number" && Number.isFinite(v) ? `${v >= 0 ? "+" : ""}${v.toFixed(2)}r` : "—";
+
+  return (
+    <Widget title="CALIBRATION" borderColor={borderColor}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 10 }}>
+        <span style={{ fontFamily: FONT_MONO, fontSize: 22, fontWeight: 700, color: borderColor, letterSpacing: "2px", lineHeight: 1 }}>
+          {winRate.toFixed(0)}%
+        </span>
+        <span style={{ fontFamily: FONT_MONO, fontSize: 9, color: C.muted, letterSpacing: "1px" }}>
+          {trades} TRADES
+        </span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 9, letterSpacing: "2px", color: C.muted }}>AVG WIN</span>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.green }}>{fmtR(avgWinR)}</span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 9, letterSpacing: "2px", color: C.muted }}>AVG LOSS</span>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.red }}>{fmtR(avgLossR)}</span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 9, letterSpacing: "2px", color: C.muted }}>EXPECTANCY</span>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: typeof expR === "number" && expR > 0 ? C.green : C.red }}>
+            {fmtR(expR)}
+          </span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 9, letterSpacing: "2px", color: C.muted }}>BEST · WORST</span>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.text }}>
+            {best ? `${best.label} ${best.rate.toFixed(0)}%` : "—"}
+            <span style={{ color: C.dim }}> · </span>
+            {worst ? `${worst.label} ${worst.rate.toFixed(0)}%` : "—"}
+          </span>
+        </div>
+      </div>
+    </Widget>
+  );
+}
+
+interface WeeklyBriefData {
+  direction: "LONG" | "SHORT" | "NEUTRAL";
+  strength: "STRONG" | "MODERATE" | "WEAK";
+  rationale: string;
+  invalidation: string | null;
+  key_levels?: { resistance: number[]; support: number[] };
+  macro_inputs: { dxy: number | null; vix: number | null; ovx: number | null; xle: number | null };
+  generated_at: string;
+}
+
+interface WeeklyBriefLiveWidgetProps { brief: WeeklyBriefData | null }
+
+function WeeklyBriefLiveWidget({ brief }: WeeklyBriefLiveWidgetProps) {
+  if (!brief) {
+    return (
+      <Widget title="WEEKLY BRIEF">
+        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "2px", color: C.dim, textAlign: "center" }}>
+            NO BRIEF YET<br />
+            <span style={{ fontSize: 9, color: C.muted, letterSpacing: "1px" }}>RUNS SUNDAY 8PM ET</span>
+          </span>
+        </div>
+      </Widget>
+    );
+  }
+  const dirColor =
+    brief.direction === "LONG"  ? C.green :
+    brief.direction === "SHORT" ? C.red :
+    C.amber;
+  const macros: Array<[string, number | null, (n: number) => string]> = [
+    ["DXY", brief.macro_inputs.dxy, (n) => n.toFixed(1)],
+    ["VIX", brief.macro_inputs.vix, (n) => n.toFixed(1)],
+    ["OVX", brief.macro_inputs.ovx, (n) => n.toFixed(1)],
+    ["XLE", brief.macro_inputs.xle, (n) => n.toFixed(2)],
+  ];
+  return (
+    <Widget title="WEEKLY BRIEF" borderColor={dirColor}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 8 }}>
+        <span style={{ fontFamily: FONT_MONO, fontSize: 18, fontWeight: 700, color: dirColor, letterSpacing: "2px", lineHeight: 1 }}>
+          {brief.direction}
+        </span>
+        <span style={{ fontFamily: FONT_MONO, fontSize: 9, color: C.muted, letterSpacing: "2px" }}>
+          {brief.strength}
+        </span>
+      </div>
+      {brief.rationale && (
+        <div style={{
+          fontFamily: FONT_MONO, fontSize: 9, color: C.muted, letterSpacing: "0.5px",
+          lineHeight: 1.45, marginBottom: 8,
+          overflow: "hidden", textOverflow: "ellipsis",
+          display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
+        }}>
+          {brief.rationale}
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: "auto" }}>
+        {macros.map(([label, value, fmt]) => (
+          <span key={label} style={{
+            fontFamily: FONT_MONO, fontSize: 9, letterSpacing: "1px",
+            padding: "2px 6px", borderRadius: 3,
+            color: value == null ? C.dim : C.text,
+            background: C.bg, border: `1px solid ${C.border}`,
+          }}>
+            <span style={{ color: C.muted, marginRight: 4 }}>{label}</span>
+            {value == null ? "—" : fmt(value)}
+          </span>
+        ))}
+      </div>
+      <div style={{ fontFamily: FONT_MONO, fontSize: 8, letterSpacing: "1px", color: C.dim, marginTop: 6 }}>
+        LAST RUN {fmtTimeAgo(brief.generated_at) || "—"}
+      </div>
+    </Widget>
+  );
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
@@ -845,6 +1127,7 @@ export default function DashboardPage() {
   const [position, setPosition] = useState<OpenPosition | null>(null);
   const [clPrice, setClPrice] = useState<number | null>(null);
   const [journalEntries, setJournalEntries] = useState<JournalEntryRow[]>([]);
+  const [weeklyBriefLive, setWeeklyBriefLive] = useState<WeeklyBriefData | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -855,7 +1138,7 @@ export default function DashboardPage() {
       try {
         const [
           calRes, condRes, pulseRes, supRes, geoRes, ovxRes, hRes,
-          ctxRes, posRes, clRes, jRes,
+          ctxRes, posRes, clRes, jRes, wbRes,
         ] = await Promise.all([
           fetch("/api/calibration", { headers, cache: "no-store" }),
           fetch("/api/conditions", { cache: "no-store" }),
@@ -868,6 +1151,7 @@ export default function DashboardPage() {
           fetch("/api/position", { headers, cache: "no-store" }),
           fetch("/api/cl-price", { cache: "no-store" }),
           fetch("/api/journal", { headers, cache: "no-store" }),
+          fetch("/api/cron/weekly-brief", { cache: "no-store" }),
         ]);
         if (cancelled) return;
         if (calRes.ok) {
@@ -901,6 +1185,10 @@ export default function DashboardPage() {
           const list = (j?.decisions ?? []).slice().reverse();
           setJournalEntries(list);
         }
+        if (wbRes.ok) {
+          const j = await wbRes.json() as { weekly_bias?: WeeklyBriefData | null };
+          setWeeklyBriefLive(j?.weekly_bias ?? null);
+        }
       } catch {
         if (!cancelled) setApiOnline(false);
       }
@@ -918,7 +1206,7 @@ export default function DashboardPage() {
   return (
     <div style={{
       display: "grid",
-      gridTemplateRows: "180px 280px 160px 200px",
+      gridTemplateRows: "180px 280px 160px 200px 200px",
       gap: 12,
       height: "100%",
       minHeight: 0,
@@ -949,6 +1237,13 @@ export default function DashboardPage() {
         <MarketMemoryWidget ctx={marketCtx} />
         <PositionTrackerWidget position={position} clPrice={clPrice} />
         <RecentEvaluationsWidget entries={journalEntries} />
+      </div>
+
+      {/* ROW 5 */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, minHeight: 0 }}>
+        <ApexGateWidget entries={journalEntries} />
+        <CalibrationSnapshotWidget snapshot={snapshot} />
+        <WeeklyBriefLiveWidget brief={weeklyBriefLive} />
       </div>
     </div>
   );
