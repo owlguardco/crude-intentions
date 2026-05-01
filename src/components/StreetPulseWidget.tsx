@@ -203,7 +203,7 @@ export default function StreetPulseWidget() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/street-pulse", { cache: "no-store" });
+      const res = await fetch("/api/street-pulse?refresh=1", { cache: "no-store" });
       if (!res.ok) {
         setLoaded(true);
         return;
