@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import logData from "@/data/safety_check_log.json";
+import type { GeoFlagResult as GeoFlag } from "@/types/geo-flag";
 
 const C = {
   bg: "#0d0d0f",
@@ -62,15 +63,6 @@ interface SupplyContext {
   supply_bias: "BEARISH" | "NEUTRAL" | "BULLISH" | null;
 }
 
-interface GeoFlag {
-  flagged: boolean;
-  matched_at: string | null;
-  matched_keyword: string | null;
-  post_title: string | null;
-  post_url: string | null;
-  checked_at: string;
-  error?: string;
-}
 
 interface RecentSignal {
   id: string;
@@ -581,11 +573,18 @@ function SupplyWidget({ supply }: SupplyWidgetProps) {
 interface GeoWidgetProps { geo: GeoFlag | null; onClick: () => void }
 
 function GeoWidget({ geo, onClick }: GeoWidgetProps) {
-  const active =
-    geo?.flagged === true && !geo.error && geo.matched_at &&
-    (Date.now() - new Date(geo.matched_at).getTime()) / 60000 <= 30;
-  const color = active ? C.amber : C.green;
-  const label = active ? "ALERT" : "CLEAR";
+  // 3-state map driven by chip_state from /api/geo-flag. Old payloads
+  // missing chip_state collapse to CLEAR for safety.
+  const state = geo?.chip_state ?? "CLEAR";
+  const color =
+    state === "HOT"    ? C.red :
+    state === "ACTIVE" ? C.amber :
+    C.green;
+  const label =
+    state === "HOT"    ? "HOT" :
+    state === "ACTIVE" ? "ALERT" :
+    "CLEAR";
+  const flagged = state !== "CLEAR";
   return (
     <Widget title="GEO FLAG" borderColor={color} onClick={onClick}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
@@ -593,7 +592,7 @@ function GeoWidget({ geo, onClick }: GeoWidgetProps) {
           aria-hidden
           style={{
             width: 10, height: 10, borderRadius: "50%", background: color,
-            animation: active ? "geo-pulse 1.5s ease-in-out infinite" : "none",
+            animation: flagged ? "geo-pulse 1.5s ease-in-out infinite" : "none",
             boxShadow: `0 0 6px ${color}`,
           }}
         />
@@ -604,14 +603,36 @@ function GeoWidget({ geo, onClick }: GeoWidgetProps) {
           {label}
         </span>
       </div>
-      {active && geo?.matched_keyword && (
-        <div style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "1px", color: C.amber, marginBottom: 4 }}>
-          ⚡ {geo.matched_keyword.toUpperCase()} · <span style={{ color: C.muted }}>{fmtTimeAgo(geo.matched_at)}</span>
+      {flagged && geo?.matched_keyword && (
+        <div style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "1px", color, marginBottom: 4 }}>
+          {state === "HOT" ? "🔴" : "⚡"} {geo.matched_keyword.toUpperCase()} · <span style={{ color: C.muted }}>{fmtTimeAgo(geo.matched_at)}</span>
         </div>
       )}
-      <div style={{ fontFamily: FONT_MONO, fontSize: 9, letterSpacing: "2px", color: C.dim }}>
-        TRUTH SOCIAL · @realDonaldTrump
-      </div>
+      {flagged && (() => {
+        const delta = geo?.price_delta_since_post ?? 0;
+        if (!geo?.price_delta_known) {
+          return (
+            <div style={{ fontFamily: FONT_MONO, fontSize: 9, letterSpacing: "1px", color: C.dim, marginBottom: 4 }}>
+              CL Δ unknown
+            </div>
+          );
+        }
+        const sign = delta >= 0 ? "+" : "−";
+        const dColor = delta > 0 ? C.green : delta < 0 ? C.red : C.muted;
+        return (
+          <div style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "1px", color: dColor, marginBottom: 4 }}>
+            CL {sign}${Math.abs(delta).toFixed(2)} since post
+          </div>
+        );
+      })()}
+      {/* Source label only surfaces when a post is actively flagged —
+          CLEAR state stays neutral so the widget reads as a generic
+          geopolitical monitor rather than a Trump-specific watcher. */}
+      {flagged && geo?.source === "truth_social" && (
+        <div style={{ fontFamily: FONT_MONO, fontSize: 9, letterSpacing: "2px", color: C.dim }}>
+          TRUTH SOCIAL · @realDonaldTrump
+        </div>
+      )}
       <style>{`@keyframes geo-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(1.2); } }`}</style>
     </Widget>
   );

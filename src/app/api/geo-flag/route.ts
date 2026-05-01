@@ -1,19 +1,36 @@
 /**
- * CRUDE INTENTIONS — Geopolitical Headline Flag
+ * CRUDE INTENTIONS — Geopolitical Headline Flag (v2)
  *
  * GET /api/geo-flag (no auth)
  *
- * Polls @realDonaldTrump's Truth Social RSS for crude-relevant keywords in
- * posts under 30 minutes old. Result is cached in KV at `geo:flag:latest`
- * for 90 seconds to absorb concurrent client polls.
+ * Two-tier keyword scanner over @realDonaldTrump's Truth Social RSS,
+ * combined with a CL price-delta-since-post measurement so a post about
+ * a court case never trips the flag and a real OPEC headline that's
+ * already moving CL trips a HOT chip instead of a generic ACTIVE one.
  *
- * Silent degradation: any failure returns
- *   { flagged: false, error: 'feed_unavailable', checked_at }
- * with HTTP 200. The caller never sees a non-200 from this route.
+ * Tier 1 — single-match flag:
+ *   crude, oil prices, OPEC, SPR, "strategic reserve", sanctions, Iran,
+ *   "drill baby drill", gasoline prices, pipeline, refinery, petroleum,
+ *   Venezuela, "energy production", tariff (only with oil/energy/crude).
+ *
+ * Tier 2 — requires 2+ words from this set together:
+ *   energy, Russia, Saudi, drill, LNG, barrels, supply, production, export.
+ *
+ * Chip states:
+ *   CLEAR  — no match in the 30-min freshness window
+ *   ACTIVE — match, |Δ since post| ≤ $0.40 (or delta unknown)
+ *   HOT    — match AND |Δ since post| > $0.40 (soft pause signal)
+ *
+ * Cache key `geo:flag:latest` (90s) preserved. Old cached payloads from
+ * the v1 schema are detected by the absence of `chip_state` and skipped.
+ *
+ * Silent degradation: any failure returns the CLEAR shape with
+ * `error: 'feed_unavailable'` and HTTP 200. The route never throws.
  */
 
 import { NextResponse } from 'next/server';
 import { kv } from '@/lib/kv';
+import type { GeoFlagResult, GeoChipState } from '@/types/geo-flag';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -23,43 +40,43 @@ const FEED_URL = 'https://truthsocial.com/@realDonaldTrump.rss';
 const CACHE_MAX_AGE_MS = 90_000;
 const FRESH_WINDOW_MS = 30 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 5_000;
+const HOT_THRESHOLD_USD = 0.40;
+const HISTORY_MATCH_WINDOW_SEC = 5 * 60;
 
-const KEYWORDS = [
-  'crude', 'oil', 'opec', 'iran', 'russia', 'saudi',
-  'spr', 'tariff', 'pipeline', 'energy', 'sanctions', 'petroleum',
+// Multi-word keywords go alongside single-word ones — `.includes(kw)` works
+// on both. Phrases use spaces; case-insensitive match (haystack is lowered).
+const TIER1_DIRECT = [
+  'crude',
+  'oil prices',
+  'opec',
+  'spr',
+  'strategic reserve',
+  'sanctions',
+  'iran',
+  'drill baby drill',
+  'gasoline prices',
+  'pipeline',
+  'refinery',
+  'petroleum',
+  'venezuela',
+  'energy production',
 ] as const;
 
-interface GeoFlagResult {
-  flagged: boolean;
-  matched_at: string | null;
-  matched_keyword: string | null;
-  post_title: string | null;
-  post_url: string | null;
-  checked_at: string;
-  error?: string;
-}
+const TIER1_TARIFF_REQUIRES = ['oil', 'energy', 'crude'] as const;
 
-function failResult(): GeoFlagResult {
-  return {
-    flagged: false,
-    matched_at: null,
-    matched_keyword: null,
-    post_title: null,
-    post_url: null,
-    checked_at: new Date().toISOString(),
-    error: 'feed_unavailable',
-  };
-}
+const TIER2 = [
+  'energy', 'russia', 'saudi', 'drill', 'lng',
+  'barrels', 'supply', 'production', 'export',
+] as const;
 
-function clearResult(): GeoFlagResult {
-  return {
-    flagged: false,
-    matched_at: null,
-    matched_keyword: null,
-    post_title: null,
-    post_url: null,
-    checked_at: new Date().toISOString(),
-  };
+interface PriceHistoryEntry { ts: number; price: number }
+interface ClPriceCached { price?: number }
+
+interface ParsedItem {
+  title: string;
+  description: string;
+  pubDate: string;
+  link: string;
 }
 
 function unwrapCdata(s: string): string {
@@ -69,13 +86,6 @@ function unwrapCdata(s: string): string {
 
 function stripHtml(s: string): string {
   return s.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-}
-
-interface ParsedItem {
-  title: string;
-  description: string;
-  pubDate: string;
-  link: string;
 }
 
 function parseRssItems(xml: string): ParsedItem[] {
@@ -89,15 +99,11 @@ function parseRssItems(xml: string): ParsedItem[] {
   let m: RegExpExecArray | null;
   while ((m = itemRe.exec(xml)) !== null) {
     const block = m[1];
-    const title = titleRe.exec(block)?.[1] ?? '';
-    const description = descRe.exec(block)?.[1] ?? '';
-    const pubDate = pubRe.exec(block)?.[1] ?? '';
-    const link = linkRe.exec(block)?.[1] ?? '';
     items.push({
-      title: unwrapCdata(title),
-      description: unwrapCdata(description),
-      pubDate: pubDate.trim(),
-      link: unwrapCdata(link),
+      title:       unwrapCdata(titleRe.exec(block)?.[1] ?? ''),
+      description: unwrapCdata(descRe.exec(block)?.[1] ?? ''),
+      pubDate:     (pubRe.exec(block)?.[1] ?? '').trim(),
+      link:        unwrapCdata(linkRe.exec(block)?.[1] ?? ''),
     });
   }
   return items;
@@ -110,7 +116,7 @@ async function fetchFeed(): Promise<string | null> {
     const res = await fetch(FEED_URL, {
       signal: ctrl.signal,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; CrudeIntentions/1.8)',
+        'User-Agent': 'Mozilla/5.0 (compatible; CrudeIntentions/1.9)',
         Accept: 'application/rss+xml, application/xml, text/xml',
       },
       cache: 'no-store',
@@ -124,7 +130,77 @@ async function fetchFeed(): Promise<string | null> {
   }
 }
 
-function evaluate(items: ParsedItem[]): GeoFlagResult {
+interface KeywordHit { keyword: string; tier: 1 | 2 }
+
+function findMatch(haystackLc: string): KeywordHit | null {
+  for (const kw of TIER1_DIRECT) {
+    if (haystackLc.includes(kw)) return { keyword: kw, tier: 1 };
+  }
+  if (haystackLc.includes('tariff') && TIER1_TARIFF_REQUIRES.some((x) => haystackLc.includes(x))) {
+    return { keyword: 'tariff', tier: 1 };
+  }
+  const tier2Hits = TIER2.filter((kw) => haystackLc.includes(kw));
+  if (tier2Hits.length >= 2) {
+    return { keyword: tier2Hits.slice(0, 2).join('+'), tier: 2 };
+  }
+  return null;
+}
+
+async function getPriceDelta(postMs: number): Promise<{ delta: number; known: boolean }> {
+  try {
+    const cl = await kv.get<ClPriceCached>('cl-price:latest');
+    const current = typeof cl?.price === 'number' && Number.isFinite(cl.price) ? cl.price : null;
+    if (current === null) return { delta: 0, known: false };
+
+    const history = await kv.get<PriceHistoryEntry[]>('cl:price:history');
+    if (!history || history.length === 0) return { delta: 0, known: false };
+
+    const postSec = Math.floor(postMs / 1000);
+    let bestEntry: PriceHistoryEntry | null = null;
+    let bestDiff = Infinity;
+    for (const h of history) {
+      if (typeof h?.ts !== 'number' || typeof h?.price !== 'number') continue;
+      const d = Math.abs(h.ts - postSec);
+      if (d < bestDiff) {
+        bestDiff = d;
+        bestEntry = h;
+      }
+    }
+    if (!bestEntry || bestDiff > HISTORY_MATCH_WINDOW_SEC) {
+      return { delta: 0, known: false };
+    }
+    return { delta: current - bestEntry.price, known: true };
+  } catch {
+    return { delta: 0, known: false };
+  }
+}
+
+function chipStateFor(flagged: boolean, deltaUsd: number, known: boolean): GeoChipState {
+  if (!flagged) return 'CLEAR';
+  if (known && Math.abs(deltaUsd) > HOT_THRESHOLD_USD) return 'HOT';
+  return 'ACTIVE';
+}
+
+function clearResult(): GeoFlagResult {
+  return {
+    flagged: false,
+    matched_at: null,
+    matched_keyword: null,
+    post_title: null,
+    post_url: null,
+    source: null,
+    checked_at: new Date().toISOString(),
+    chip_state: 'CLEAR',
+    price_delta_since_post: 0,
+    price_delta_known: false,
+  };
+}
+
+function failResult(): GeoFlagResult {
+  return { ...clearResult(), error: 'feed_unavailable' };
+}
+
+async function evaluate(items: ParsedItem[]): Promise<GeoFlagResult> {
   const now = Date.now();
   const cutoff = now - FRESH_WINDOW_MS;
 
@@ -132,22 +208,29 @@ function evaluate(items: ParsedItem[]): GeoFlagResult {
     const ts = Date.parse(item.pubDate);
     if (!Number.isFinite(ts) || ts < cutoff) continue;
 
-    const haystack = (
+    const haystackLc = (
       stripHtml(item.title) + ' ' + stripHtml(item.description)
     ).toLowerCase();
-    const matched = KEYWORDS.find((kw) => haystack.includes(kw));
-    if (!matched) continue;
+    const hit = findMatch(haystackLc);
+    if (!hit) continue;
 
+    const { delta, known } = await getPriceDelta(ts);
     const titleClean = stripHtml(item.title);
+    const post_title = titleClean.length > 0
+      ? (titleClean.length > 200 ? titleClean.slice(0, 197) + '...' : titleClean)
+      : null;
+
     return {
       flagged: true,
       matched_at: new Date(ts).toISOString(),
-      matched_keyword: matched,
-      post_title: titleClean.length > 0
-        ? (titleClean.length > 200 ? titleClean.slice(0, 197) + '...' : titleClean)
-        : null,
+      matched_keyword: hit.keyword,
+      post_title,
       post_url: item.link || null,
+      source: 'truth_social',
       checked_at: new Date().toISOString(),
+      chip_state: chipStateFor(true, delta, known),
+      price_delta_since_post: Math.round(delta * 100) / 100,
+      price_delta_known: known,
     };
   }
 
@@ -155,10 +238,11 @@ function evaluate(items: ParsedItem[]): GeoFlagResult {
 }
 
 export async function GET() {
-  // Cache check
+  // Cache check — old v1 payloads (no chip_state) are skipped so we don't
+  // serve stale CLEAR/ACTIVE info from before the v2 deploy.
   try {
     const cached = await kv.get<GeoFlagResult>(KV_KEY);
-    if (cached?.checked_at) {
+    if (cached?.checked_at && cached.chip_state) {
       const age = Date.now() - Date.parse(cached.checked_at);
       if (Number.isFinite(age) && age < CACHE_MAX_AGE_MS) {
         return NextResponse.json(cached);
@@ -178,7 +262,7 @@ export async function GET() {
   let result: GeoFlagResult;
   try {
     const items = parseRssItems(xml);
-    result = evaluate(items);
+    result = await evaluate(items);
   } catch {
     result = failResult();
   }

@@ -5,6 +5,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import EIABanner from "@/components/EIABanner";
+import type { GeoFlagResult } from "@/types/geo-flag";
 
 const NAV_ITEMS = [
   { href: "/", label: "DASHBOARD" },
@@ -97,13 +98,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const [session, setSession] = useState(getSession());
   const [eia, setEia] = useState(getEIA());
   const [nyCountdown, setNyCountdown] = useState(getNyOpenCountdown());
-  const [geoFlag, setGeoFlag] = useState<{
-    flagged: boolean;
-    matched_at: string | null;
-    post_title: string | null;
-    post_url: string | null;
-    error?: string;
-  } | null>(null);
+  const [geoFlag, setGeoFlag] = useState<GeoFlagResult | null>(null);
   const [geoExpanded, setGeoExpanded] = useState(false);
   const [clPrice, setClPrice] = useState<number | null>(null);
   const [clSessionOpen, setClSessionOpen] = useState<number | null>(null);
@@ -185,14 +180,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         const res = await fetch("/api/geo-flag");
         if (cancelled) return;
         if (!res.ok) return;
-        const json = await res.json();
-        setGeoFlag({
-          flagged: !!json.flagged,
-          matched_at: json.matched_at ?? null,
-          post_title: json.post_title ?? null,
-          post_url: json.post_url ?? null,
-          error: json.error,
-        });
+        const json = (await res.json()) as GeoFlagResult;
+        setGeoFlag(json);
       } catch {
         // silent — leave previous state
       }
@@ -374,7 +363,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             }}>{nyCountdown.label}</span>
 
             {(() => {
-              if (!geoFlag) {
+              // 3-state chip mapped from GeoFlagResult.chip_state. Old v1
+              // payloads (no chip_state) fall through to the dim "—" state
+              // until the route writes a v2 cache entry.
+              if (!geoFlag || !geoFlag.chip_state || geoFlag.error) {
                 return (
                   <span style={{
                     fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "2px",
@@ -383,43 +375,41 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   }}>GEO · —</span>
                 );
               }
-              if (geoFlag.error === "feed_unavailable") {
+              if (geoFlag.chip_state === "CLEAR") {
                 return (
                   <span style={{
                     fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "2px",
                     padding: "3px 8px", borderRadius: 3,
-                    color: "#444450", background: "transparent", border: "1px solid #2a2a2e",
-                  }}>GEO · —</span>
+                    color: "#666670", background: "#66667018", border: "1px solid #66667040",
+                  }}>GEO · CLEAR</span>
                 );
               }
-              if (geoFlag.flagged && geoFlag.matched_at) {
-                const mins = Math.max(0, Math.floor((Date.now() - new Date(geoFlag.matched_at).getTime()) / 60000));
-                if (mins > 30) {
-                  return (
-                    <span style={{
-                      fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "2px",
-                      padding: "3px 8px", borderRadius: 3,
-                      color: "#666670", background: "#66667018", border: "1px solid #66667040",
-                    }}>GEOPOLITICAL · CLEAR</span>
-                  );
-                }
+              const mins = geoFlag.matched_at
+                ? Math.max(0, Math.floor((Date.now() - new Date(geoFlag.matched_at).getTime()) / 60000))
+                : 0;
+              if (geoFlag.chip_state === "HOT") {
                 return (
                   <span
                     onClick={() => setGeoExpanded((v) => !v)}
+                    title="CL is moving since the flagged post — soft pause"
                     style={{
                       fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "2px",
                       padding: "3px 8px", borderRadius: 3, cursor: "pointer",
-                      color: "#d4a520", background: "#d4a52018", border: "1px solid #d4a52040",
+                      color: "#ef4444", background: "#ef444418", border: "1px solid #ef444440",
+                      fontWeight: 700,
                     }}
-                  >⚡ TRUTH · {mins} MIN AGO</span>
+                  >🔴 TRUTH · {mins} MIN AGO — CL MOVING</span>
                 );
               }
               return (
-                <span style={{
-                  fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "2px",
-                  padding: "3px 8px", borderRadius: 3,
-                  color: "#666670", background: "#66667018", border: "1px solid #66667040",
-                }}>GEOPOLITICAL · CLEAR</span>
+                <span
+                  onClick={() => setGeoExpanded((v) => !v)}
+                  style={{
+                    fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "2px",
+                    padding: "3px 8px", borderRadius: 3, cursor: "pointer",
+                    color: "#d4a520", background: "#d4a52018", border: "1px solid #d4a52040",
+                  }}
+                >⚡ TRUTH · {mins} MIN AGO</span>
               );
             })()}
 
@@ -432,40 +422,64 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </div>
 
           {/* Geopolitical flag inline expansion */}
-          {geoExpanded && geoFlag?.flagged && geoFlag.post_title && (
-            <div style={{
-              background: "rgba(212,165,32,0.08)",
-              borderBottom: "1px solid rgba(212,165,32,0.30)",
-              padding: "10px 24px", flexShrink: 0,
-              fontFamily: "JetBrains Mono, monospace", fontSize: 11,
-              color: "#e0e0e0", letterSpacing: "1px",
-              display: "flex", alignItems: "center", gap: 12,
-            }}>
-              <span style={{ color: "#d4a520", fontSize: 10, letterSpacing: "2px" }}>⚡ TRUTH POST</span>
-              <span style={{ flex: 1, color: "#888", fontSize: 11, letterSpacing: 0 }}>
-                {geoFlag.post_title}
-              </span>
-              {geoFlag.post_url && (
-                <a
-                  href={geoFlag.post_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
+          {geoExpanded && geoFlag?.flagged && geoFlag.post_title && (() => {
+            const isHot = geoFlag.chip_state === "HOT";
+            const accent = isHot ? "#ef4444" : "#d4a520";
+            const bg = isHot ? "rgba(239,68,68,0.08)" : "rgba(212,165,32,0.08)";
+            const borderCol = isHot ? "rgba(239,68,68,0.30)" : "rgba(212,165,32,0.30)";
+            const excerpt = geoFlag.post_title.length > 120
+              ? `${geoFlag.post_title.slice(0, 117)}...`
+              : geoFlag.post_title;
+            const delta = geoFlag.price_delta_since_post ?? 0;
+            const deltaSign = delta >= 0 ? "+" : "−";
+            const deltaText = geoFlag.price_delta_known
+              ? `CL: ${deltaSign}$${Math.abs(delta).toFixed(2)} since post`
+              : "CL Δ unknown — no recent price history";
+            const deltaColor = !geoFlag.price_delta_known
+              ? "#666670"
+              : delta > 0 ? "#22c55e"
+              : delta < 0 ? "#ef4444"
+              : "#888";
+            return (
+              <div style={{
+                background: bg,
+                borderBottom: `1px solid ${borderCol}`,
+                padding: "10px 24px", flexShrink: 0,
+                fontFamily: "JetBrains Mono, monospace", fontSize: 11,
+                color: "#e0e0e0", letterSpacing: "1px",
+                display: "flex", alignItems: "center", gap: 12,
+              }}>
+                <span style={{ color: accent, fontSize: 10, letterSpacing: "2px", flexShrink: 0 }}>
+                  {isHot ? "🔴 TRUTH POST" : "⚡ TRUTH POST"}
+                </span>
+                <span style={{ flex: 1, color: "#888", fontSize: 11, letterSpacing: 0 }}>
+                  {excerpt}
+                </span>
+                <span style={{ color: deltaColor, fontSize: 10, letterSpacing: "1px", flexShrink: 0 }}>
+                  {deltaText}
+                </span>
+                {geoFlag.post_url && (
+                  <a
+                    href={geoFlag.post_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      color: accent, fontSize: 9, letterSpacing: "2px",
+                      textDecoration: "none", padding: "3px 8px",
+                      border: `1px solid ${accent}40`, borderRadius: 3,
+                    }}
+                  >OPEN ↗</a>
+                )}
+                <button
+                  onClick={() => setGeoExpanded(false)}
                   style={{
-                    color: "#d4a520", fontSize: 9, letterSpacing: "2px",
-                    textDecoration: "none", padding: "3px 8px",
-                    border: "1px solid #d4a52040", borderRadius: 3,
+                    background: "transparent", border: "none", cursor: "pointer",
+                    color: "#666670", fontSize: 14, lineHeight: 1, padding: "0 4px",
                   }}
-                >OPEN ↗</a>
-              )}
-              <button
-                onClick={() => setGeoExpanded(false)}
-                style={{
-                  background: "transparent", border: "none", cursor: "pointer",
-                  color: "#666670", fontSize: 14, lineHeight: 1, padding: "0 4px",
-                }}
-              >×</button>
-            </div>
-          )}
+                >×</button>
+              </div>
+            );
+          })()}
 
           {/* ALFRED Fallback Banner — visible app-wide while in fallback or recovery */}
           {(alfredStatus === "FALLBACK" || alfredStatus === "DOWN") && (

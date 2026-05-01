@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import type { GeoFlagResult as GeoFlag } from "@/types/geo-flag";
 
 const C = {
   bg: "#0d0d0f",
@@ -47,15 +48,6 @@ interface StreetPulseResponse {
   stale?: boolean;
 }
 
-interface GeoFlag {
-  flagged: boolean;
-  matched_at: string | null;
-  matched_keyword: string | null;
-  post_title: string | null;
-  post_url: string | null;
-  checked_at: string;
-  error?: string;
-}
 
 interface StateMeta {
   label: string;
@@ -133,12 +125,8 @@ export default function NewsPage() {
   const samples = pulse?.samples ?? headlines.length;
   const score = pulse?.score ?? 0;
 
-  const geoActive =
-    geo?.flagged === true && !geo.error && (() => {
-      if (!geo.matched_at) return false;
-      const mins = (Date.now() - new Date(geo.matched_at).getTime()) / 60000;
-      return Number.isFinite(mins) && mins <= 30;
-    })();
+  // ACTIVE or HOT both render the geo banner; CLEAR / errored does not.
+  const geoActive = geo?.chip_state === "ACTIVE" || geo?.chip_state === "HOT";
 
   const filtered = headlines.filter((h) => {
     if (filter === "ALL") return true;
