@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import logData from "@/data/safety_check_log.json";
 import weeklyBias from "@/data/weekly_bias.json";
@@ -582,6 +583,253 @@ function GeoWidget({ geo, onClick }: GeoWidgetProps) {
   );
 }
 
+// ── Row 4 widgets ──────────────────────────────────────────────────────────
+
+interface WeeklyBriefSnippet {
+  direction?: "LONG" | "SHORT" | "NEUTRAL";
+  rationale?: string;
+}
+
+interface MarketContextResponse {
+  current_bias?: "LONG" | "SHORT" | "NEUTRAL";
+  bias_strength?: "STRONG" | "MODERATE" | "WEAK";
+  last_updated?: string;
+  weekly_bias?: WeeklyBriefSnippet | null;
+  supply_context?: { supply_bias?: "BEARISH" | "NEUTRAL" | "BULLISH" | null } | null;
+}
+
+interface MarketMemoryWidgetProps { ctx: MarketContextResponse | null }
+
+function MarketMemoryWidget({ ctx }: MarketMemoryWidgetProps) {
+  const dir = ctx?.current_bias ?? null;
+  const dirColor = dir === "LONG" ? C.green : dir === "SHORT" ? C.red : dir === "NEUTRAL" ? C.amber : C.dim;
+  const wb = ctx?.weekly_bias;
+  const supplyBias = ctx?.supply_context?.supply_bias ?? null;
+  const supplyColor =
+    supplyBias === "BULLISH" ? C.green :
+    supplyBias === "BEARISH" ? C.red :
+    supplyBias === "NEUTRAL" ? C.muted : C.dim;
+  const empty = !ctx || !dir;
+  return (
+    <Widget title="MARKET MEMORY" borderColor={dirColor}>
+      {empty ? (
+        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "2px", color: C.dim }}>
+          NO CONTEXT YET
+        </div>
+      ) : (
+        <>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 8 }}>
+            <span style={{ fontFamily: FONT_MONO, fontSize: 22, fontWeight: 700, letterSpacing: "2px", color: dirColor, lineHeight: 1 }}>
+              {dir}
+            </span>
+            <span style={{ fontFamily: FONT_MONO, fontSize: 9, letterSpacing: "2px", color: C.muted }}>
+              {ctx?.bias_strength ?? "—"}
+            </span>
+          </div>
+          {wb?.rationale && (
+            <div style={{
+              fontFamily: FONT_MONO, fontSize: 9, color: C.muted, letterSpacing: "0.5px",
+              lineHeight: 1.45, marginBottom: 8,
+              overflow: "hidden", textOverflow: "ellipsis",
+              display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
+            }}>
+              {wb.rationale}
+            </div>
+          )}
+          <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: 5 }}>
+            {supplyBias && (
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontFamily: FONT_MONO, fontSize: 9, letterSpacing: "2px", color: C.muted }}>SUPPLY</span>
+                <span style={{
+                  fontFamily: FONT_MONO, fontSize: 9, fontWeight: 700, letterSpacing: "1px",
+                  color: supplyColor,
+                  padding: "2px 6px", borderRadius: 3,
+                  background: `${supplyColor}18`, border: `1px solid ${supplyColor}40`,
+                }}>{supplyBias}</span>
+              </div>
+            )}
+            {ctx?.last_updated && (
+              <div style={{ fontFamily: FONT_MONO, fontSize: 8, letterSpacing: "1px", color: C.dim }}>
+                UPDATED {fmtTimeAgo(ctx.last_updated) || "—"}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </Widget>
+  );
+}
+
+interface OpenPosition {
+  direction: "LONG" | "SHORT";
+  entry_price: number;
+  contracts: number;
+  stop_loss?: number | null;
+  target?: number | null;
+  tp1_price?: number | null;
+  opened_at?: string;
+}
+
+interface PositionTrackerWidgetProps {
+  position: OpenPosition | null;
+  clPrice: number | null;
+}
+
+function PositionTrackerWidget({ position, clPrice }: PositionTrackerWidgetProps) {
+  if (!position) {
+    return (
+      <Widget title="POSITION">
+        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 22, fontWeight: 700, letterSpacing: "3px", color: C.dim }}>
+            FLAT
+          </span>
+        </div>
+      </Widget>
+    );
+  }
+  const dirColor = position.direction === "LONG" ? C.green : C.red;
+  const isLong = position.direction === "LONG";
+  const ticks = clPrice != null ? (isLong ? (clPrice - position.entry_price) : (position.entry_price - clPrice)) * 100 : null;
+  const dollars = ticks != null ? ticks * 10 * (position.contracts ?? 1) : null;
+  const riskTicks = position.stop_loss != null
+    ? Math.abs((position.entry_price - position.stop_loss) / 0.01)
+    : 0;
+  const rMultiple = ticks != null && riskTicks > 0 ? ticks / riskTicks : null;
+  const pnlColor = dollars == null ? C.dim : dollars > 0 ? C.green : dollars < 0 ? C.red : C.muted;
+  return (
+    <Widget title="POSITION" borderColor={dirColor}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 8 }}>
+        <span style={{ fontFamily: FONT_MONO, fontSize: 18, fontWeight: 700, letterSpacing: "2px", color: dirColor, lineHeight: 1 }}>
+          {position.direction}
+        </span>
+        <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.text }}>
+          @ {position.entry_price.toFixed(2)}
+        </span>
+        <span style={{ fontFamily: FONT_MONO, fontSize: 9, color: C.muted, letterSpacing: "1px", marginLeft: "auto" }}>
+          {position.contracts}× CL
+        </span>
+      </div>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 10 }}>
+        <span style={{ fontFamily: FONT_MONO, fontSize: 18, fontWeight: 700, color: pnlColor, lineHeight: 1 }}>
+          {dollars == null ? "—" : `${dollars >= 0 ? "+" : ""}$${dollars.toFixed(0)}`}
+        </span>
+        <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: pnlColor, letterSpacing: "1px" }}>
+          {rMultiple == null ? "" : `${rMultiple >= 0 ? "+" : ""}${rMultiple.toFixed(2)}R`}
+        </span>
+      </div>
+      <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 9, letterSpacing: "2px", color: C.muted }}>STOP</span>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.red }}>
+            {position.stop_loss != null ? position.stop_loss.toFixed(2) : "—"}
+          </span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 9, letterSpacing: "2px", color: C.muted }}>TP1</span>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.green }}>
+            {position.tp1_price != null ? position.tp1_price.toFixed(2) : position.target != null ? position.target.toFixed(2) : "—"}
+          </span>
+        </div>
+      </div>
+    </Widget>
+  );
+}
+
+interface JournalEntryRow {
+  id: string;
+  timestamp?: string;
+  direction?: "LONG" | "SHORT" | "NO TRADE";
+  grade?: string;
+  outcome?: { status?: string; result?: string | null };
+}
+
+interface RecentEvaluationsWidgetProps { entries: JournalEntryRow[] }
+
+function RecentEvaluationsWidget({ entries }: RecentEvaluationsWidgetProps) {
+  const rows = entries.slice(0, 5);
+  return (
+    <Widget title="RECENT EVALUATIONS">
+      {rows.length === 0 ? (
+        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "2px", color: C.dim }}>
+          NO ENTRIES
+        </div>
+      ) : (
+        <>
+          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            {rows.map((d) => {
+              const dir = d.direction ?? "—";
+              const dirColor = dir === "LONG" ? C.green : dir === "SHORT" ? C.red : C.amber;
+              const grade = d.grade ?? "—";
+              const gradeColor =
+                grade === "A+" ? C.green :
+                grade === "A"  ? "#86efac" :
+                grade === "B+" ? C.amber :
+                grade === "B"  ? C.amber :
+                grade === "F"  ? C.red :
+                C.muted;
+              const status = d.outcome?.status ?? "OPEN";
+              const result = d.outcome?.result ?? null;
+              const sKey = result ?? status;
+              const sColor =
+                sKey === "WIN" ? C.green :
+                sKey === "LOSS" ? C.red :
+                sKey === "OPEN" ? C.amber :
+                sKey === "SCRATCH" ? C.muted :
+                C.muted;
+              return (
+                <div key={d.id} style={{
+                  display: "grid",
+                  gridTemplateColumns: "70px 50px 30px 1fr",
+                  gap: 8, alignItems: "center",
+                  padding: "5px 8px",
+                  background: C.bg,
+                  border: `1px solid ${C.border}`,
+                  borderRadius: 3,
+                }}>
+                  <span style={{ fontFamily: FONT_MONO, fontSize: 9, color: C.muted }}>
+                    {d.timestamp
+                      ? new Date(d.timestamp).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+                      : "—"}
+                  </span>
+                  <span style={{ fontFamily: FONT_MONO, fontSize: 10, fontWeight: 700, letterSpacing: "1px", color: dirColor }}>
+                    {dir === "NO TRADE" ? "SKIP" : dir}
+                  </span>
+                  <span style={{
+                    fontFamily: FONT_MONO, fontSize: 9, fontWeight: 700, letterSpacing: "1px",
+                    color: gradeColor,
+                    padding: "1px 5px", borderRadius: 2,
+                    background: `${gradeColor}18`, border: `1px solid ${gradeColor}40`,
+                    textAlign: "center",
+                  }}>
+                    {grade}
+                  </span>
+                  <span style={{
+                    fontFamily: FONT_MONO, fontSize: 9, fontWeight: 700, letterSpacing: "1px",
+                    color: sColor,
+                    padding: "1px 5px", borderRadius: 2,
+                    background: `${sColor}18`, border: `1px solid ${sColor}40`,
+                    justifySelf: "end",
+                  }}>
+                    {String(sKey).toUpperCase()}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ marginTop: "auto", paddingTop: 6, display: "flex", justifyContent: "flex-end" }}>
+            <Link href="/journal" style={{
+              fontFamily: FONT_MONO, fontSize: 9, letterSpacing: "2px",
+              color: C.muted, textDecoration: "none",
+            }}>
+              VIEW ALL →
+            </Link>
+          </div>
+        </>
+      )}
+    </Widget>
+  );
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
@@ -593,6 +841,10 @@ export default function DashboardPage() {
   const [geo, setGeo] = useState<GeoFlag | null>(null);
   const [ovx, setOvx] = useState<number | null>(null);
   const [apiOnline, setApiOnline] = useState<boolean | null>(null);
+  const [marketCtx, setMarketCtx] = useState<MarketContextResponse | null>(null);
+  const [position, setPosition] = useState<OpenPosition | null>(null);
+  const [clPrice, setClPrice] = useState<number | null>(null);
+  const [journalEntries, setJournalEntries] = useState<JournalEntryRow[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -601,7 +853,10 @@ export default function DashboardPage() {
 
     const loadAll = async () => {
       try {
-        const [calRes, condRes, pulseRes, supRes, geoRes, ovxRes, hRes] = await Promise.all([
+        const [
+          calRes, condRes, pulseRes, supRes, geoRes, ovxRes, hRes,
+          ctxRes, posRes, clRes, jRes,
+        ] = await Promise.all([
           fetch("/api/calibration", { headers, cache: "no-store" }),
           fetch("/api/conditions", { cache: "no-store" }),
           fetch("/api/street-pulse", { cache: "no-store" }),
@@ -609,6 +864,10 @@ export default function DashboardPage() {
           fetch("/api/geo-flag", { cache: "no-store" }),
           fetch("/api/ovx", { cache: "no-store" }),
           fetch("/api/health", { cache: "no-store" }),
+          fetch("/api/market-context", { cache: "no-store" }),
+          fetch("/api/position", { headers, cache: "no-store" }),
+          fetch("/api/cl-price", { cache: "no-store" }),
+          fetch("/api/journal", { headers, cache: "no-store" }),
         ]);
         if (cancelled) return;
         if (calRes.ok) {
@@ -627,6 +886,21 @@ export default function DashboardPage() {
           if (typeof j.price === "number") setOvx(j.price);
         }
         setApiOnline(hRes.ok);
+        if (ctxRes.ok) setMarketCtx(await ctxRes.json() as MarketContextResponse);
+        if (posRes.ok) {
+          const j = await posRes.json() as { position?: OpenPosition | null };
+          setPosition(j?.position ?? null);
+        }
+        if (clRes.ok) {
+          const j = await clRes.json() as { price?: number };
+          if (typeof j.price === "number") setClPrice(j.price);
+        }
+        if (jRes.ok) {
+          const j = await jRes.json() as { decisions?: JournalEntryRow[] };
+          // Most recent first — readJournal returns chronological order
+          const list = (j?.decisions ?? []).slice().reverse();
+          setJournalEntries(list);
+        }
       } catch {
         if (!cancelled) setApiOnline(false);
       }
@@ -644,7 +918,7 @@ export default function DashboardPage() {
   return (
     <div style={{
       display: "grid",
-      gridTemplateRows: "180px 280px 160px",
+      gridTemplateRows: "180px 280px 160px 200px",
       gap: 12,
       height: "100%",
       minHeight: 0,
@@ -668,6 +942,13 @@ export default function DashboardPage() {
         <SentimentWidget pulse={pulse} onClick={goNews} />
         <SupplyWidget supply={supply} />
         <GeoWidget geo={geo} onClick={goNews} />
+      </div>
+
+      {/* ROW 4 */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, minHeight: 0 }}>
+        <MarketMemoryWidget ctx={marketCtx} />
+        <PositionTrackerWidget position={position} clPrice={clPrice} />
+        <RecentEvaluationsWidget entries={journalEntries} />
       </div>
     </div>
   );
