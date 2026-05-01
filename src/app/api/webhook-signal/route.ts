@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { writeJournalEntry } from '@/lib/journal/writer';
 import { scoreToConfidence } from '@/lib/alfred/confidence';
 import { AdversarialScanSchema } from '@/lib/validation/journal-schema';
+import { safeEq } from '@/lib/auth/safe-compare';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY;
@@ -204,6 +205,14 @@ async function runAdversarialScan(signal: WebhookSignal, alfredResult: AlfredRes
     };
   }
 
+  // F-4 — sanitize reasoning before interpolating into the adversarial
+  // prompt: cap length, strip newlines, neutralise triple-backticks so a
+  // crafted reasoning string can't escape the user-prompt context.
+  const safeReasoning = (alfredResult.reasoning ?? '')
+    .slice(0, 500)
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/```/g, "'''");
+
   const userPrompt = `CL futures setup under review:
 
 Direction: ${alfredResult.decision}
@@ -213,7 +222,7 @@ EMA20: ${signal.ema20} | VWAP: ${signal.vwap ?? 'N/A'}
 RSI: ${signal.rsi} | OVX: ${signal.ovx} | DXY: ${signal.dxy}
 Session: ${signal.session}
 Confluence score: ${alfredResult.score}/10 (${alfredResult.grade})
-ALFRED reasoning: ${alfredResult.reasoning}
+ALFRED reasoning: ${safeReasoning}
 
 Checklist summary:
 ${alfredResult.checklist.map((c: ChecklistItem) => `  ${c.result} — ${c.label}: ${c.detail}`).join('\n')}
@@ -275,8 +284,9 @@ function notifyDiscordBot(payload: Record<string, unknown>): void {
 
 // ─── POST /api/webhook-signal ─────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
+  // F-12 — constant-time comparison via safeEq.
   const authHeader = req.headers.get('x-api-key');
-  if (!INTERNAL_API_KEY || authHeader !== INTERNAL_API_KEY) {
+  if (!INTERNAL_API_KEY || !authHeader || !safeEq(authHeader, INTERNAL_API_KEY)) {
     console.error('[WEBHOOK] Unauthorized request — bad or missing x-api-key');
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
@@ -355,9 +365,12 @@ export async function POST(req: NextRequest) {
       received_at:         receivedAt,
     });
 
+    // F-11 — drop the raw caller-supplied `signal` from the response so
+    // an attacker probing this endpoint can't read it back. alfred +
+    // adversarial + journal blocks already cover what a legitimate
+    // caller needs.
     return NextResponse.json({
       received_at: receivedAt,
-      signal,
       alfred: {
         ...alfredResult,
         confidence_label,
@@ -371,8 +384,9 @@ export async function POST(req: NextRequest) {
     });
 
   } catch (err: unknown) {
+    // F-7 — log the raw error server-side, return a generic message.
     const message = err instanceof Error ? err.message : 'Unknown error';
-    console.error('[WEBHOOK] Processing error:', message);
-    return NextResponse.json({ error: 'Signal processing failed', detail: message }, { status: 500 });
+    console.error('[webhook-signal] processing error:', message);
+    return NextResponse.json({ error: 'Signal processing failed' }, { status: 500 });
   }
 }
