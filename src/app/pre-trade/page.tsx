@@ -674,46 +674,6 @@ export default function PreTradePage() {
                 </div>
               </div>
             )}
-            {/* Entry Alignment panel */}
-            {result.entry_alignment && (() => {
-              const ea = result.entry_alignment;
-              const c = ea.label === "ALIGNED" ? "#22c55e"
-                : ea.label === "MIXED" ? "#d4a520"
-                : "#ef4444";
-              return (
-                <div style={{
-                  marginBottom: 14, padding: 14,
-                  background: "#111115", border: "1px solid #2a2a2e", borderRadius: 4,
-                  borderLeft: `3px solid ${c}`,
-                }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-                    <span style={{
-                      fontFamily: "JetBrains Mono, monospace", fontSize: 9,
-                      letterSpacing: "3px", color: "#666670",
-                    }}>ENTRY ALIGNMENT</span>
-                    <span style={{
-                      fontFamily: "JetBrains Mono, monospace", fontSize: 10,
-                      letterSpacing: "2px", padding: "2px 7px", borderRadius: 3,
-                      color: c, background: `${c}18`,
-                      border: `1px solid ${c}40`, fontWeight: 700,
-                    }}>{ea.label}</span>
-                    <span style={{
-                      fontFamily: "JetBrains Mono, monospace", fontSize: 11,
-                      color: "#e0e0e0", fontWeight: 700, marginLeft: "auto",
-                    }}>{ea.score} / 3</span>
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                    {ea.breakdown.map((line, i) => (
-                      <div key={i} style={{
-                        fontFamily: "JetBrains Mono, monospace", fontSize: 10,
-                        color: "#888", lineHeight: 1.55,
-                      }}>· {line}</div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })()}
-
             {/* MTF Consensus panel */}
             {result.mtf_consensus && (() => {
               const m = result.mtf_consensus;
@@ -856,6 +816,49 @@ export default function PreTradePage() {
                 </div>
               ))}
             </div>
+
+            {/* Entry Alignment panel — between checklist and reasoning so
+                the HTF-vs-setup score sits next to the per-factor checks
+                that informed it. Only renders when both EMA-stack
+                dropdowns were filled in on the form. */}
+            {result.entry_alignment && (() => {
+              const ea = result.entry_alignment;
+              const c = ea.label === "ALIGNED" ? "#22c55e"
+                : ea.label === "MIXED" ? "#d4a520"
+                : "#ef4444";
+              return (
+                <div style={{
+                  marginBottom: 14, padding: 14,
+                  background: "#111115", border: "1px solid #2a2a2e", borderRadius: 4,
+                  borderLeft: `3px solid ${c}`,
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                    <span style={{
+                      fontFamily: "JetBrains Mono, monospace", fontSize: 9,
+                      letterSpacing: "3px", color: "#666670",
+                    }}>ENTRY ALIGNMENT</span>
+                    <span style={{
+                      fontFamily: "JetBrains Mono, monospace", fontSize: 10,
+                      letterSpacing: "2px", padding: "2px 7px", borderRadius: 3,
+                      color: c, background: `${c}18`,
+                      border: `1px solid ${c}40`, fontWeight: 700,
+                    }}>{ea.label}</span>
+                    <span style={{
+                      fontFamily: "JetBrains Mono, monospace", fontSize: 11,
+                      color: "#e0e0e0", fontWeight: 700, marginLeft: "auto",
+                    }}>{ea.score} / 3</span>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    {ea.breakdown.map((line, i) => (
+                      <div key={i} style={{
+                        fontFamily: "JetBrains Mono, monospace", fontSize: 10,
+                        color: "#888", lineHeight: 1.55,
+                      }}>· {line}</div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Blocked reasons */}
             {result.blocked_reasons?.length > 0 && (
