@@ -7,7 +7,8 @@ import {
   type CalibrationSnapshot,
   type FactorKey,
 } from "@/lib/journal/calibration";
-import { generateSuggestedRuleChanges } from "@/lib/journal/observer";
+import { generateSuggestedRuleChanges, generateRunnerAnalysis } from "@/lib/journal/observer";
+import type { CalibrationEntry } from "@/lib/journal/calibration";
 
 const FACTOR_LABELS: Record<FactorKey, string> = {
   ema_stack_aligned: "EMA Stack",
@@ -487,7 +488,7 @@ export default function JournalPage() {
       </div>
 
       {mode === "CALIBRATION" ? (
-        <CalibrationPanel snapshot={calSnapshot} notes={calNotes} loaded={calLoaded} />
+        <CalibrationPanel snapshot={calSnapshot} notes={calNotes} loaded={calLoaded} entries={decisions as CalibrationEntry[]} />
       ) : (
         <JournalView
           decisions={decisions}
@@ -971,6 +972,31 @@ function JournalView({
                           HIST
                         </span>
                       )}
+                      {(() => {
+                        const rm: string | null | undefined = d.runner_management;
+                        if (!rm) return null;
+                        const short =
+                          rm === "HELD_TO_TP2"          ? "HELD TP2" :
+                          rm === "TRAILED_TO_STRUCTURE" ? "TRAILED STR" :
+                          rm === "TRAILED_TO_VWAP"      ? "TRAILED VWAP" :
+                          rm === "MANUAL_CLOSE"         ? "MANUAL" :
+                          rm === "NO_RUNNER"            ? "NONE" :
+                          rm;
+                        return (
+                          <span
+                            title={`Runner management — ${rm.replace(/_/g, ' ').toLowerCase()}`}
+                            style={{
+                              fontFamily: "JetBrains Mono, monospace",
+                              fontSize: 9, letterSpacing: "1px",
+                              padding: "2px 5px", borderRadius: 3,
+                              color: "#888", background: "#2a2a2e40",
+                              border: "1px solid #2a2a2e",
+                            }}
+                          >
+                            RUNNER: {short}
+                          </span>
+                        );
+                      })()}
                     </div>
                   </td>
                   <td style={{ padding: "11px 12px 11px 0", borderBottom: "1px solid #2a2a2e20" }}>
@@ -1136,9 +1162,10 @@ interface CalibrationPanelProps {
   snapshot: CalibrationSnapshot | null;
   notes: string[];
   loaded: boolean;
+  entries: CalibrationEntry[];
 }
 
-function CalibrationPanel({ snapshot, notes, loaded }: CalibrationPanelProps) {
+function CalibrationPanel({ snapshot, notes, loaded, entries }: CalibrationPanelProps) {
   if (!loaded) {
     return (
       <div style={{ background: "#1a1a1e", border: "1px solid #2a2a2e", borderRadius: 6, padding: 32, textAlign: "center" }}>
@@ -1509,6 +1536,81 @@ function CalibrationPanel({ snapshot, notes, loaded }: CalibrationPanelProps) {
                 ))}
               </div>
             )}
+          </div>
+        );
+      })()}
+
+      {/* Runner analysis — TP1-hit cohort grouped by runner_management
+          style. Display only, fed by journal entries (not the snapshot)
+          since the calibration engine doesn't track runner buckets.
+          Hidden until the cohort reaches 5 trades. */}
+      {(() => {
+        const runner = generateRunnerAnalysis(entries);
+        if (!runner) return null;
+        const fmtR = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(2)}R`;
+        return (
+          <div style={{
+            background: "#1a1a1e",
+            border: "1px solid #d4a52040",
+            borderTop: "2px solid #d4a520",
+            borderRadius: 6,
+            padding: 20,
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "3px", color: "#d4a520" }}>
+                RUNNER ANALYSIS
+              </span>
+              <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "1px", color: "#666670" }}>
+                {runner.total_trades} TP1-hit · live only
+              </span>
+            </div>
+            <div style={{
+              fontFamily: "JetBrains Mono, monospace", fontSize: 9,
+              letterSpacing: "1px", color: "#666670", lineHeight: 1.55, marginBottom: 14,
+            }}>
+              Average R per runner-management style across closed TP1-hit trades. Display-only — rules.json stays human-edited.
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {runner.buckets.map((b) => {
+                const rColor = b.avg_r > 0 ? "#22c55e" : b.avg_r < 0 ? "#ef4444" : "#888";
+                const styleLabel = b.style.replace(/_/g, " ");
+                return (
+                  <div
+                    key={b.style}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 70px 90px",
+                      alignItems: "center",
+                      gap: 12,
+                      padding: "10px 14px",
+                      background: "#d4a52010",
+                      border: "1px solid #d4a52030",
+                      borderLeft: "3px solid #d4a520",
+                      borderRadius: 4,
+                    }}
+                  >
+                    <span style={{
+                      fontFamily: "JetBrains Mono, monospace", fontSize: 11,
+                      letterSpacing: "1px", color: "#e0e0e0",
+                    }}>
+                      {styleLabel}
+                    </span>
+                    <span style={{
+                      fontFamily: "JetBrains Mono, monospace", fontSize: 10,
+                      letterSpacing: "1px", color: "#888", textAlign: "right",
+                    }}>
+                      {b.trades} trade{b.trades === 1 ? "" : "s"}
+                    </span>
+                    <span style={{
+                      fontFamily: "JetBrains Mono, monospace", fontSize: 12,
+                      fontWeight: 700, letterSpacing: "1px", color: rColor, textAlign: "right",
+                    }}>
+                      avg {fmtR(b.avg_r)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         );
       })()}

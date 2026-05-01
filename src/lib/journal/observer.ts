@@ -58,6 +58,83 @@ export interface SuggestedRuleChange {
   evidence: string;
 }
 
+// Runner management cohort — grouped stats for the post-TP1 runner
+// styles. Display only; never feeds an automation rule. Computed
+// directly from journal entries so it's independent of the calibration
+// snapshot (snapshot doesn't track runner buckets).
+export type RunnerStyle =
+  | 'HELD_TO_TP2'
+  | 'TRAILED_TO_STRUCTURE'
+  | 'TRAILED_TO_VWAP'
+  | 'MANUAL_CLOSE'
+  | 'NO_RUNNER';
+
+export interface RunnerBucket {
+  style: RunnerStyle;
+  trades: number;
+  avg_r: number;
+}
+
+export interface RunnerAnalysis {
+  total_trades: number;
+  buckets: RunnerBucket[];
+}
+
+const RUNNER_MIN_TOTAL = 5;
+const RUNNER_STYLES: RunnerStyle[] = [
+  'HELD_TO_TP2',
+  'TRAILED_TO_STRUCTURE',
+  'TRAILED_TO_VWAP',
+  'MANUAL_CLOSE',
+  'NO_RUNNER',
+];
+
+type EntryWithRunner = CalibrationEntry & { runner_management?: RunnerStyle | null };
+
+export function generateRunnerAnalysis(entries: CalibrationEntry[]): RunnerAnalysis | null {
+  // Filter to entries that:
+  //   - have a runner_management value set (the modal only surfaces the
+  //     dropdown when TP1 was hit, so this implies TP1-hit by construction)
+  //   - have a finite result_r so the avg-R math is meaningful
+  //   - are not historical/backtest imports (those don't carry runner data
+  //     anyway, but the filter is cheap insurance against future synthetic
+  //     entries that happen to set the field)
+  const candidates: Array<{ style: RunnerStyle; r: number }> = [];
+  for (const e of entries as EntryWithRunner[]) {
+    if (e.historical === true) continue;
+    const rm = e.runner_management;
+    if (!rm) continue;
+    const r = e.outcome?.result_r;
+    if (typeof r !== 'number' || !Number.isFinite(r)) continue;
+    candidates.push({ style: rm, r });
+  }
+
+  if (candidates.length < RUNNER_MIN_TOTAL) return null;
+
+  const sums: Record<RunnerStyle, { count: number; rSum: number }> = {
+    HELD_TO_TP2:          { count: 0, rSum: 0 },
+    TRAILED_TO_STRUCTURE: { count: 0, rSum: 0 },
+    TRAILED_TO_VWAP:      { count: 0, rSum: 0 },
+    MANUAL_CLOSE:         { count: 0, rSum: 0 },
+    NO_RUNNER:            { count: 0, rSum: 0 },
+  };
+  for (const c of candidates) {
+    sums[c.style].count += 1;
+    sums[c.style].rSum += c.r;
+  }
+
+  const buckets: RunnerBucket[] = RUNNER_STYLES
+    .filter((s) => sums[s].count > 0)
+    .map((s) => ({
+      style: s,
+      trades: sums[s].count,
+      avg_r: sums[s].rSum / sums[s].count,
+    }))
+    .sort((a, b) => b.avg_r - a.avg_r);
+
+  return { total_trades: candidates.length, buckets };
+}
+
 const SUGGEST_MIN_N = 8;
 const SUGGEST_EDGE_PP = 15;
 

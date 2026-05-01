@@ -21,6 +21,11 @@ export interface TradeEntry {
   direction: "LONG" | "SHORT";
   entry_price: number | null;
   stop_loss: number | null;
+  // Either spelling appears in stored entries (legacy take_profit_1
+  // from the JournalWriteSchema vs tp1_price from the pre-trade
+  // logSetup payload). The modal reads whichever is present.
+  tp1_price?: number | null;
+  take_profit_1?: number | null;
   contracts: number | null;
   timestamp: string;
   score: number;
@@ -28,6 +33,21 @@ export interface TradeEntry {
   confidence_label: string;
   session: string;
 }
+
+export type RunnerManagement =
+  | "HELD_TO_TP2"
+  | "TRAILED_TO_STRUCTURE"
+  | "TRAILED_TO_VWAP"
+  | "MANUAL_CLOSE"
+  | "NO_RUNNER";
+
+const RUNNER_OPTIONS: Array<{ value: RunnerManagement; label: string }> = [
+  { value: "HELD_TO_TP2",          label: "HELD TO TP2 — full target" },
+  { value: "TRAILED_TO_STRUCTURE", label: "TRAILED TO STRUCTURE — swing low/high" },
+  { value: "TRAILED_TO_VWAP",      label: "TRAILED TO VWAP" },
+  { value: "MANUAL_CLOSE",         label: "MANUAL CLOSE — discretionary" },
+  { value: "NO_RUNNER",            label: "NO RUNNER — single contract" },
+];
 
 interface Props {
   trade: TradeEntry;
@@ -45,6 +65,7 @@ function statusColor(s: "WIN" | "LOSS" | "SCRATCH" | null): string {
 export default function LogOutcomeModal({ trade, onClose, onSave }: Props) {
   const [closePriceStr, setClosePriceStr] = useState("");
   const [runPostmortem, setRunPostmortem] = useState(false);
+  const [runnerManagement, setRunnerManagement] = useState<RunnerManagement | "">("");
   const [saving, setSaving] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -82,6 +103,14 @@ export default function LogOutcomeModal({ trade, onClose, onSave }: Props) {
     stopLoss != null &&
     (isLong ? closePrice < stopLoss - 2.0 : closePrice > stopLoss + 2.0);
 
+  // TP1-hit detection — runner-management dropdown only renders when
+  // the close price meets/exceeds tp1 in the trade direction.
+  const tp1 = trade.tp1_price ?? trade.take_profit_1 ?? null;
+  const tp1Hit =
+    isValid &&
+    tp1 != null &&
+    (isLong ? closePrice >= tp1 : closePrice <= tp1);
+
   // Reset two-click confirmation when close price changes
   useEffect(() => {
     setConfirmed(false);
@@ -99,6 +128,12 @@ export default function LogOutcomeModal({ trade, onClose, onSave }: Props) {
       await onSave(trade.id, {
         close_price: closePrice,
         run_postmortem: runPostmortem,
+        // Only attach when the trader actually picked an option AND the
+        // trade reached TP1. Skipping the prompt keeps the field absent
+        // so the route preserves any prior value.
+        ...(tp1Hit && runnerManagement !== ""
+          ? { runner_management: runnerManagement }
+          : {}),
       });
     } catch (err) {
       const msg = err instanceof Error && err.message
@@ -376,6 +411,35 @@ export default function LogOutcomeModal({ trade, onClose, onSave }: Props) {
                 ⚠ CLOSE PRICE IS MORE THAN $2.00 PAST STOP LOSS
               </div>
             )}
+          </div>
+        )}
+
+        {/* Runner management — surfaces only when the close price hit TP1.
+            Optional; null when the trader skips, so no nag if forgotten. */}
+        {tp1Hit && (
+          <div style={{ marginBottom: 18 }}>
+            <label style={{ display: "block", ...mono, fontSize: 9, letterSpacing: "2px", color: C.muted, marginBottom: 6 }}>
+              HOW DID YOU MANAGE THE RUNNER?
+            </label>
+            <select
+              value={runnerManagement}
+              onChange={(e) => setRunnerManagement(e.target.value as RunnerManagement | "")}
+              style={{
+                width: "100%",
+                padding: "8px 10px",
+                background: C.panel,
+                border: `1px solid ${C.border}`,
+                borderRadius: 4,
+                color: runnerManagement === "" ? C.muted : C.text,
+                fontFamily: "JetBrains Mono, monospace",
+                fontSize: 11,
+              }}
+            >
+              <option value="">— optional · skip if you forget —</option>
+              {RUNNER_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
           </div>
         )}
 

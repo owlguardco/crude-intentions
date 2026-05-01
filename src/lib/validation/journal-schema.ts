@@ -60,6 +60,17 @@ export const JournalWriteSchema = z.object({
   alfred_fallback: z.boolean().default(false),
   postmortem: z.string().nullable().default(null),
   postmortem_at: z.string().nullable().optional(),
+  // How the runner (contract 2) was managed after TP1 hit. Null when
+  // the trade never reached TP1 (LOSS / SCRATCH / pre-TP1 stop) or
+  // when the trader skipped the prompt. Display + cohort-only — does
+  // NOT feed any auto-routing decision; rules.json stays human-edited.
+  runner_management: z.enum([
+    'HELD_TO_TP2',
+    'TRAILED_TO_STRUCTURE',
+    'TRAILED_TO_VWAP',
+    'MANUAL_CLOSE',
+    'NO_RUNNER',
+  ]).nullable().optional(),
   // Shadow Log — counterfactual outcome for NO TRADE / B-grade
   // rejections, populated by /api/journal/shadow-resolve. Display-only;
   // calibration cohort math ignores this field.

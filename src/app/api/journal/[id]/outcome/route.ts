@@ -23,6 +23,13 @@ const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY;
 const ClosePatchSchema = z.object({
   close_price: z.number().finite().min(10).max(500),
   run_postmortem: z.boolean().optional().default(false),
+  runner_management: z.enum([
+    'HELD_TO_TP2',
+    'TRAILED_TO_STRUCTURE',
+    'TRAILED_TO_VWAP',
+    'MANUAL_CLOSE',
+    'NO_RUNNER',
+  ]).nullable().optional(),
 });
 
 const PostmortemPatchSchema = z.object({
@@ -93,7 +100,7 @@ export async function PATCH(
     );
   }
 
-  const { close_price, run_postmortem } = parsed.data;
+  const { close_price, run_postmortem, runner_management } = parsed.data;
 
   // Step 1 — Load entries, find by id, compute and write outcome
   const entries = (await kv.get<CalibrationEntry[]>('journal:entries')) ?? [];
@@ -150,6 +157,10 @@ export async function PATCH(
       close_price,
       close_timestamp,
     },
+    // Top-level alongside postmortem / shadow_result. undefined means
+    // the field was omitted by the caller (skipped on save) — preserve
+    // any existing value rather than wiping. null means explicit clear.
+    ...(runner_management !== undefined ? { runner_management } : {}),
   };
 
   await kv.set('journal:entries', entries);
