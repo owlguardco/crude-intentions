@@ -22,6 +22,22 @@ export const dynamic = 'force-dynamic';
 const KV_KEY = 'cl-price:latest';
 const CACHE_MAX_AGE_MS = 30 * 1000;
 
+// Ring buffer of recent CL prices keyed by `cl:price:history`. Used by
+// /api/geo-flag to compute price-delta-since-post for HOT chip-state
+// detection. Only written on a fresh Yahoo fetch — cache-hit reads do
+// not append (would duplicate the same observation).
+//
+// Buffer math: ~60 entries × 30s cache TTL ≈ 30 min of coverage —
+// enough for the 30-min freshness window /api/geo-flag uses to scan
+// for matched posts.
+const HISTORY_KEY = 'cl:price:history';
+const HISTORY_MAX_ENTRIES = 60;
+
+interface PriceHistoryEntry {
+  ts: number;     // unix seconds
+  price: number;
+}
+
 interface CachedPrice {
   price: number;
   timestamp: number;
@@ -152,6 +168,31 @@ export async function GET() {
       cached_at: new Date().toISOString(),
     };
     try { await kv.set(KV_KEY, payload); } catch { /* swallow */ }
+
+    // Append to the rolling price history so /api/geo-flag can compute
+    // CL Δ-since-post for HOT detection. Best-effort — any failure is
+    // swallowed so a misbehaving KV doesn't take down the price strip.
+    try {
+      const prev = (await kv.get<PriceHistoryEntry[]>(HISTORY_KEY)) ?? [];
+      const next: PriceHistoryEntry[] = [
+        ...prev,
+        { ts: payload.timestamp, price: payload.price },
+      ];
+      // Drop duplicates by ts (cache hit could repeat the same regular
+      // market timestamp on the next fresh fetch if the bar didn't roll).
+      const seen = new Set<number>();
+      const deduped: PriceHistoryEntry[] = [];
+      for (let i = next.length - 1; i >= 0; i--) {
+        const e = next[i];
+        if (seen.has(e.ts)) continue;
+        seen.add(e.ts);
+        deduped.unshift(e);
+      }
+      const trimmed = deduped.slice(-HISTORY_MAX_ENTRIES);
+      await kv.set(HISTORY_KEY, trimmed);
+    } catch {
+      /* swallow — history is best-effort, geo-flag handles missing key */
+    }
 
     return NextResponse.json({
       price: payload.price,
