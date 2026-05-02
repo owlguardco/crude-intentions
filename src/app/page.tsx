@@ -132,12 +132,12 @@ function Widget({ title, borderColor = C.divider, onClick, children }: WidgetPro
       }}
     >
       <div style={{
-        fontFamily: FONT_MONO, fontSize: 9, letterSpacing: "3px",
+        fontFamily: FONT_MONO, fontSize: 11, letterSpacing: "3px",
         color: C.muted, marginBottom: 10,
         display: "flex", justifyContent: "space-between", alignItems: "center",
       }}>
         <span>{title}</span>
-        {onClick && <span style={{ color: C.dim, fontSize: 11 }}>↗</span>}
+        {onClick && <span style={{ color: C.dim, fontSize: 13}}>↗</span>}
       </div>
       <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
         {children}
@@ -159,7 +159,7 @@ function WeeklyBiasWidget({ ctx }: WeeklyBiasWidgetProps) {
       <Widget title="WEEKLY BIAS" borderColor={C.dim}>
         <div style={{
           flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
-          fontFamily: FONT_MONO, fontSize: 11, letterSpacing: "2px", color: C.dim,
+          fontFamily: FONT_MONO, fontSize: 13, letterSpacing: "2px", color: C.dim,
         }}>
           NO BIAS SET
         </div>
@@ -179,12 +179,12 @@ function WeeklyBiasWidget({ ctx }: WeeklyBiasWidgetProps) {
       }}>
         {dir}
       </div>
-      <div style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "2px", color: C.muted }}>
+      <div style={{ fontFamily: FONT_MONO, fontSize: 12, letterSpacing: "2px", color: C.muted }}>
         {strength} CONVICTION
       </div>
       {invalidation && (
         <div style={{
-          fontFamily: FONT_MONO, fontSize: 9, color: C.red, letterSpacing: "1px",
+          fontFamily: FONT_MONO, fontSize: 11, color: C.red, letterSpacing: "1px",
           marginTop: 10, lineHeight: 1.4,
           overflow: "hidden", textOverflow: "ellipsis",
           display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
@@ -193,7 +193,7 @@ function WeeklyBiasWidget({ ctx }: WeeklyBiasWidgetProps) {
         </div>
       )}
       <div style={{
-        fontFamily: FONT_MONO, fontSize: 9, color: C.dim,
+        fontFamily: FONT_MONO, fontSize: 11, color: C.dim,
         marginTop: "auto", letterSpacing: "1px",
       }}>
         {setAt
@@ -234,12 +234,12 @@ function AlfredWidget({ snapshot, apiOnline }: AlfredWidgetProps) {
       </div>
       <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: 6 }}>
         <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <span style={{ fontFamily: FONT_MONO, fontSize: 9, letterSpacing: "1px", color: C.muted }}>SESSIONS</span>
-          <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.text }}>{trades}</span>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 11, letterSpacing: "1px", color: C.muted }}>SESSIONS</span>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 13, color: C.text }}>{trades}</span>
         </div>
         <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <span style={{ fontFamily: FONT_MONO, fontSize: 9, letterSpacing: "1px", color: C.muted }}>WIN RATE</span>
-          <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.text }}>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 11, letterSpacing: "1px", color: C.muted }}>WIN RATE</span>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 13, color: C.text }}>
             {trades > 0 ? `${winRate.toFixed(1)}%` : "—"}
           </span>
         </div>
@@ -269,7 +269,7 @@ function OvxWidget({ ovx }: OvxWidgetProps) {
       }}>
         {ovx == null ? "—" : ovx.toFixed(1)}
       </div>
-      <div style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "2px", color: C.muted, marginBottom: 14 }}>
+      <div style={{ fontFamily: FONT_MONO, fontSize: 12, letterSpacing: "2px", color: C.muted, marginBottom: 14 }}>
         ZONE · <span style={{ color: zone.color, fontWeight: 700 }}>{zone.label}</span>
       </div>
       <div style={{ marginTop: "auto" }}>
@@ -335,7 +335,7 @@ function Phase3Widget({ snapshot }: Phase3WidgetProps) {
           transition: "width 0.4s ease",
         }} />
       </div>
-      <div style={{ marginTop: "auto", fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "2px", color: cleared ? C.green : C.amber, fontWeight: 700 }}>
+      <div style={{ marginTop: "auto", fontFamily: FONT_MONO, fontSize: 12, letterSpacing: "2px", color: cleared ? C.green : C.amber, fontWeight: 700 }}>
         {cleared ? "✓ GATE CLEAR" : `${pending} CONDITIONS PENDING`}
       </div>
     </Widget>
@@ -370,10 +370,10 @@ function ConditionsWidget({ conditions }: ConditionsWidgetProps) {
                 boxShadow: r.value !== null ? `0 0 4px ${dotColor}80` : "none",
                 flexShrink: 0,
               }} />
-              <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.text, letterSpacing: "1px", flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              <span style={{ fontFamily: FONT_MONO, fontSize: 12, color: C.text, letterSpacing: "1px", flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                 {r.label}
               </span>
-              <span style={{ fontFamily: FONT_MONO, fontSize: 9, letterSpacing: "1px", color: valueColor, fontWeight: 700 }}>
+              <span style={{ fontFamily: FONT_MONO, fontSize: 11, letterSpacing: "1px", color: valueColor, fontWeight: 700 }}>
                 {r.value === true ? "PASS" : r.value === false ? "FAIL" : "—"}
               </span>
             </div>
@@ -393,7 +393,7 @@ function RecentSignalsWidget({ signals }: RecentSignalsWidgetProps) {
       {rows.length === 0 ? (
         <div style={{
           flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
-          fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "2px", color: C.dim,
+          fontFamily: FONT_MONO, fontSize: 12, letterSpacing: "2px", color: C.dim,
         }}>
           NO SIGNALS YET
         </div>
@@ -426,17 +426,17 @@ function RecentSignalsWidget({ signals }: RecentSignalsWidgetProps) {
                 border: `1px solid ${C.border}`,
                 borderRadius: 3,
               }}>
-                <span style={{ fontFamily: FONT_MONO, fontSize: 9, color: C.muted }}>
+                <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted }}>
                   {new Date(d.timestamp).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}
                 </span>
                 <span style={{
-                  fontFamily: FONT_MONO, fontSize: 11, fontWeight: 700,
+                  fontFamily: FONT_MONO, fontSize: 13, fontWeight: 700,
                   letterSpacing: "1px", color: dirColor,
                 }}>
                   {d.decision === "NO TRADE" ? "SKIP" : d.decision}
                 </span>
                 <span style={{
-                  fontFamily: FONT_MONO, fontSize: 10, fontWeight: 700,
+                  fontFamily: FONT_MONO, fontSize: 12, fontWeight: 700,
                   letterSpacing: "1px", color: gradeColor,
                   padding: "2px 6px", borderRadius: 3,
                   background: `${gradeColor}18`, border: `1px solid ${gradeColor}40`,
@@ -445,7 +445,7 @@ function RecentSignalsWidget({ signals }: RecentSignalsWidgetProps) {
                   {grade}
                 </span>
                 <span style={{
-                  fontFamily: FONT_MONO, fontSize: 9, fontWeight: 700,
+                  fontFamily: FONT_MONO, fontSize: 11, fontWeight: 700,
                   letterSpacing: "1px", color: statusColor,
                   padding: "2px 6px", borderRadius: 3,
                   background: `${statusColor}18`, border: `1px solid ${statusColor}40`,
@@ -506,7 +506,7 @@ function SentimentWidget({ pulse, onClick }: SentimentWidgetProps) {
         <span>BULL</span>
       </div>
 
-      <div style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "1px", color: C.muted }}>
+      <div style={{ fontFamily: FONT_MONO, fontSize: 12, letterSpacing: "1px", color: C.muted }}>
         score {score >= 0 ? "+" : ""}{score} · {samples} sample{samples === 1 ? "" : "s"}
       </div>
     </Widget>
@@ -543,7 +543,7 @@ function SupplyWidget({ supply }: SupplyWidgetProps) {
       {rows.length === 0 ? (
         <div style={{
           flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
-          fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "2px", color: C.dim,
+          fontFamily: FONT_MONO, fontSize: 12, letterSpacing: "2px", color: C.dim,
         }}>
           AWAITING DATA
         </div>
@@ -551,11 +551,11 @@ function SupplyWidget({ supply }: SupplyWidgetProps) {
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {rows.map((r) => (
             <div key={r.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "2px", color: C.muted }}>
+              <span style={{ fontFamily: FONT_MONO, fontSize: 12, letterSpacing: "2px", color: C.muted }}>
                 {r.label}
               </span>
               <span style={{
-                fontFamily: FONT_MONO, fontSize: 10, fontWeight: 700, letterSpacing: "1px",
+                fontFamily: FONT_MONO, fontSize: 12, fontWeight: 700, letterSpacing: "1px",
                 color: r.color,
                 padding: "2px 7px", borderRadius: 3,
                 background: `${r.color}18`, border: `1px solid ${r.color}40`,
@@ -604,7 +604,7 @@ function GeoWidget({ geo, onClick }: GeoWidgetProps) {
         </span>
       </div>
       {flagged && geo?.matched_keyword && (
-        <div style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "1px", color, marginBottom: 4 }}>
+        <div style={{ fontFamily: FONT_MONO, fontSize: 12, letterSpacing: "1px", color, marginBottom: 4 }}>
           {state === "HOT" ? "🔴" : "⚡"} {geo.matched_keyword.toUpperCase()} · <span style={{ color: C.muted }}>{fmtTimeAgo(geo.matched_at)}</span>
         </div>
       )}
@@ -612,7 +612,7 @@ function GeoWidget({ geo, onClick }: GeoWidgetProps) {
         const delta = geo?.price_delta_since_post ?? 0;
         if (!geo?.price_delta_known) {
           return (
-            <div style={{ fontFamily: FONT_MONO, fontSize: 9, letterSpacing: "1px", color: C.dim, marginBottom: 4 }}>
+            <div style={{ fontFamily: FONT_MONO, fontSize: 11, letterSpacing: "1px", color: C.dim, marginBottom: 4 }}>
               CL Δ unknown
             </div>
           );
@@ -620,7 +620,7 @@ function GeoWidget({ geo, onClick }: GeoWidgetProps) {
         const sign = delta >= 0 ? "+" : "−";
         const dColor = delta > 0 ? C.green : delta < 0 ? C.red : C.muted;
         return (
-          <div style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "1px", color: dColor, marginBottom: 4 }}>
+          <div style={{ fontFamily: FONT_MONO, fontSize: 12, letterSpacing: "1px", color: dColor, marginBottom: 4 }}>
             CL {sign}${Math.abs(delta).toFixed(2)} since post
           </div>
         );
@@ -629,7 +629,7 @@ function GeoWidget({ geo, onClick }: GeoWidgetProps) {
           CLEAR state stays neutral so the widget reads as a generic
           geopolitical monitor rather than a Trump-specific watcher. */}
       {flagged && geo?.source === "truth_social" && (
-        <div style={{ fontFamily: FONT_MONO, fontSize: 9, letterSpacing: "2px", color: C.dim }}>
+        <div style={{ fontFamily: FONT_MONO, fontSize: 11, letterSpacing: "2px", color: C.dim }}>
           TRUTH SOCIAL · @realDonaldTrump
         </div>
       )}
@@ -670,7 +670,7 @@ function MarketMemoryWidget({ ctx }: MarketMemoryWidgetProps) {
   return (
     <Widget title="MARKET MEMORY" borderColor={dirColor}>
       {empty ? (
-        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "2px", color: C.dim }}>
+        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: FONT_MONO, fontSize: 12, letterSpacing: "2px", color: C.dim }}>
           NO CONTEXT YET
         </div>
       ) : (
@@ -679,13 +679,13 @@ function MarketMemoryWidget({ ctx }: MarketMemoryWidgetProps) {
             <span style={{ fontFamily: FONT_MONO, fontSize: 22, fontWeight: 700, letterSpacing: "2px", color: dirColor, lineHeight: 1 }}>
               {dir}
             </span>
-            <span style={{ fontFamily: FONT_MONO, fontSize: 9, letterSpacing: "2px", color: C.muted }}>
+            <span style={{ fontFamily: FONT_MONO, fontSize: 11, letterSpacing: "2px", color: C.muted }}>
               {ctx?.bias_strength ?? "—"}
             </span>
           </div>
           {wb?.rationale && (
             <div style={{
-              fontFamily: FONT_MONO, fontSize: 9, color: C.muted, letterSpacing: "0.5px",
+              fontFamily: FONT_MONO, fontSize: 11, color: C.muted, letterSpacing: "0.5px",
               lineHeight: 1.45, marginBottom: 8,
               overflow: "hidden", textOverflow: "ellipsis",
               display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
@@ -696,9 +696,9 @@ function MarketMemoryWidget({ ctx }: MarketMemoryWidgetProps) {
           <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: 5 }}>
             {supplyBias && (
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontFamily: FONT_MONO, fontSize: 9, letterSpacing: "2px", color: C.muted }}>SUPPLY</span>
+                <span style={{ fontFamily: FONT_MONO, fontSize: 11, letterSpacing: "2px", color: C.muted }}>SUPPLY</span>
                 <span style={{
-                  fontFamily: FONT_MONO, fontSize: 9, fontWeight: 700, letterSpacing: "1px",
+                  fontFamily: FONT_MONO, fontSize: 11, fontWeight: 700, letterSpacing: "1px",
                   color: supplyColor,
                   padding: "2px 6px", borderRadius: 3,
                   background: `${supplyColor}18`, border: `1px solid ${supplyColor}40`,
@@ -759,10 +759,10 @@ function PositionTrackerWidget({ position, clPrice }: PositionTrackerWidgetProps
         <span style={{ fontFamily: FONT_MONO, fontSize: 18, fontWeight: 700, letterSpacing: "2px", color: dirColor, lineHeight: 1 }}>
           {position.direction}
         </span>
-        <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.text }}>
+        <span style={{ fontFamily: FONT_MONO, fontSize: 13, color: C.text }}>
           @ {position.entry_price.toFixed(2)}
         </span>
-        <span style={{ fontFamily: FONT_MONO, fontSize: 9, color: C.muted, letterSpacing: "1px", marginLeft: "auto" }}>
+        <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted, letterSpacing: "1px", marginLeft: "auto" }}>
           {position.contracts}× CL
         </span>
       </div>
@@ -770,20 +770,20 @@ function PositionTrackerWidget({ position, clPrice }: PositionTrackerWidgetProps
         <span style={{ fontFamily: FONT_MONO, fontSize: 18, fontWeight: 700, color: pnlColor, lineHeight: 1 }}>
           {dollars == null ? "—" : `${dollars >= 0 ? "+" : ""}$${dollars.toFixed(0)}`}
         </span>
-        <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: pnlColor, letterSpacing: "1px" }}>
+        <span style={{ fontFamily: FONT_MONO, fontSize: 12, color: pnlColor, letterSpacing: "1px" }}>
           {rMultiple == null ? "" : `${rMultiple >= 0 ? "+" : ""}${rMultiple.toFixed(2)}R`}
         </span>
       </div>
       <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
         <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <span style={{ fontFamily: FONT_MONO, fontSize: 9, letterSpacing: "2px", color: C.muted }}>STOP</span>
-          <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.red }}>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 11, letterSpacing: "2px", color: C.muted }}>STOP</span>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 12, color: C.red }}>
             {position.stop_loss != null ? position.stop_loss.toFixed(2) : "—"}
           </span>
         </div>
         <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <span style={{ fontFamily: FONT_MONO, fontSize: 9, letterSpacing: "2px", color: C.muted }}>TP1</span>
-          <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.green }}>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 11, letterSpacing: "2px", color: C.muted }}>TP1</span>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 12, color: C.green }}>
             {position.tp1_price != null ? position.tp1_price.toFixed(2) : position.target != null ? position.target.toFixed(2) : "—"}
           </span>
         </div>
@@ -828,7 +828,7 @@ function RecentEvaluationsWidget({ entries }: RecentEvaluationsWidgetProps) {
   return (
     <Widget title="RECENT EVALUATIONS">
       {rows.length === 0 ? (
-        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "2px", color: C.dim }}>
+        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: FONT_MONO, fontSize: 12, letterSpacing: "2px", color: C.dim }}>
           NO ENTRIES
         </div>
       ) : (
@@ -872,16 +872,16 @@ function RecentEvaluationsWidget({ entries }: RecentEvaluationsWidgetProps) {
                   border: `1px solid ${C.border}`,
                   borderRadius: 3,
                 }}>
-                  <span style={{ fontFamily: FONT_MONO, fontSize: 9, color: C.muted }}>
+                  <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted }}>
                     {d.timestamp
                       ? new Date(d.timestamp).toLocaleDateString("en-US", { month: "short", day: "numeric" })
                       : "—"}
                   </span>
-                  <span style={{ fontFamily: FONT_MONO, fontSize: 10, fontWeight: 700, letterSpacing: "1px", color: dirColor }}>
+                  <span style={{ fontFamily: FONT_MONO, fontSize: 12, fontWeight: 700, letterSpacing: "1px", color: dirColor }}>
                     {dir === "NO TRADE" ? "SKIP" : dir}
                   </span>
                   <span style={{
-                    fontFamily: FONT_MONO, fontSize: 9, fontWeight: 700, letterSpacing: "1px",
+                    fontFamily: FONT_MONO, fontSize: 11, fontWeight: 700, letterSpacing: "1px",
                     color: gradeColor,
                     padding: "1px 5px", borderRadius: 2,
                     background: `${gradeColor}18`, border: `1px solid ${gradeColor}40`,
@@ -890,7 +890,7 @@ function RecentEvaluationsWidget({ entries }: RecentEvaluationsWidgetProps) {
                     {grade}
                   </span>
                   <span style={{
-                    fontFamily: FONT_MONO, fontSize: 9, fontWeight: 700, letterSpacing: "1px",
+                    fontFamily: FONT_MONO, fontSize: 11, fontWeight: 700, letterSpacing: "1px",
                     color: sColor,
                     padding: "1px 5px", borderRadius: 2,
                     background: `${sColor}18`, border: `1px solid ${sColor}40`,
@@ -904,7 +904,7 @@ function RecentEvaluationsWidget({ entries }: RecentEvaluationsWidgetProps) {
           </div>
           <div style={{ marginTop: "auto", paddingTop: 6, display: "flex", justifyContent: "flex-end" }}>
             <Link href="/journal" style={{
-              fontFamily: FONT_MONO, fontSize: 9, letterSpacing: "2px",
+              fontFamily: FONT_MONO, fontSize: 11, letterSpacing: "2px",
               color: C.muted, textDecoration: "none",
             }}>
               VIEW ALL →
@@ -998,17 +998,17 @@ function DrawdownGateWidget({ entries }: DrawdownGateWidgetProps) {
         }}>
           {breached ? "BREACHED" : warn ? "WARN" : "CLEAR"}
         </span>
-        <span style={{ fontFamily: FONT_MONO, fontSize: 9, color: C.muted, letterSpacing: "1px" }}>
+        <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted, letterSpacing: "1px" }}>
           EVAL · {todayClosedCount} TRADES TODAY
         </span>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
         {rows.map((r) => (
           <div key={r.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontFamily: FONT_MONO, fontSize: 9, letterSpacing: "2px", color: C.muted }}>
+            <span style={{ fontFamily: FONT_MONO, fontSize: 11, letterSpacing: "2px", color: C.muted }}>
               {r.label}
             </span>
-            <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: r.color, letterSpacing: "1px" }}>
+            <span style={{ fontFamily: FONT_MONO, fontSize: 12, color: r.color, letterSpacing: "1px" }}>
               {r.value}
             </span>
           </div>
@@ -1065,10 +1065,10 @@ function CalibrationSnapshotWidget({ snapshot }: CalibrationSnapshotWidgetProps)
     return (
       <Widget title="CALIBRATION" borderColor={borderColor}>
         <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", gap: 6 }}>
-          <span style={{ fontFamily: FONT_MONO, fontSize: 11, letterSpacing: "2px", color: C.dim }}>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 13, letterSpacing: "2px", color: C.dim }}>
             INSUFFICIENT DATA
           </span>
-          <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.muted, letterSpacing: "1px" }}>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 12, color: C.muted, letterSpacing: "1px" }}>
             {trades} / 20 TRADES
           </span>
         </div>
@@ -1085,28 +1085,28 @@ function CalibrationSnapshotWidget({ snapshot }: CalibrationSnapshotWidgetProps)
         <span style={{ fontFamily: FONT_MONO, fontSize: 22, fontWeight: 700, color: borderColor, letterSpacing: "2px", lineHeight: 1 }}>
           {winRate.toFixed(0)}%
         </span>
-        <span style={{ fontFamily: FONT_MONO, fontSize: 9, color: C.muted, letterSpacing: "1px" }}>
+        <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted, letterSpacing: "1px" }}>
           {trades} TRADES
         </span>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
         <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <span style={{ fontFamily: FONT_MONO, fontSize: 9, letterSpacing: "2px", color: C.muted }}>AVG WIN</span>
-          <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.green }}>{fmtR(avgWinR)}</span>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 11, letterSpacing: "2px", color: C.muted }}>AVG WIN</span>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 12, color: C.green }}>{fmtR(avgWinR)}</span>
         </div>
         <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <span style={{ fontFamily: FONT_MONO, fontSize: 9, letterSpacing: "2px", color: C.muted }}>AVG LOSS</span>
-          <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.red }}>{fmtR(avgLossR)}</span>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 11, letterSpacing: "2px", color: C.muted }}>AVG LOSS</span>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 12, color: C.red }}>{fmtR(avgLossR)}</span>
         </div>
         <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <span style={{ fontFamily: FONT_MONO, fontSize: 9, letterSpacing: "2px", color: C.muted }}>EXPECTANCY</span>
-          <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: typeof expR === "number" && expR > 0 ? C.green : C.red }}>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 11, letterSpacing: "2px", color: C.muted }}>EXPECTANCY</span>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 12, color: typeof expR === "number" && expR > 0 ? C.green : C.red }}>
             {fmtR(expR)}
           </span>
         </div>
         <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <span style={{ fontFamily: FONT_MONO, fontSize: 9, letterSpacing: "2px", color: C.muted }}>BEST · WORST</span>
-          <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.text }}>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 11, letterSpacing: "2px", color: C.muted }}>BEST · WORST</span>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 12, color: C.text }}>
             {best ? `${best.label} ${best.rate.toFixed(0)}%` : "—"}
             <span style={{ color: C.dim }}> · </span>
             {worst ? `${worst.label} ${worst.rate.toFixed(0)}%` : "—"}
@@ -1134,9 +1134,9 @@ function WeeklyBriefLiveWidget({ brief }: WeeklyBriefLiveWidgetProps) {
     return (
       <Widget title="WEEKLY BRIEF">
         <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <span style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: "2px", color: C.dim, textAlign: "center" }}>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 12, letterSpacing: "2px", color: C.dim, textAlign: "center" }}>
             NO BRIEF YET<br />
-            <span style={{ fontSize: 9, color: C.muted, letterSpacing: "1px" }}>RUNS SUNDAY 8PM ET</span>
+            <span style={{ fontSize: 11, color: C.muted, letterSpacing: "1px" }}>RUNS SUNDAY 8PM ET</span>
           </span>
         </div>
       </Widget>
@@ -1158,13 +1158,13 @@ function WeeklyBriefLiveWidget({ brief }: WeeklyBriefLiveWidgetProps) {
         <span style={{ fontFamily: FONT_MONO, fontSize: 18, fontWeight: 700, color: dirColor, letterSpacing: "2px", lineHeight: 1 }}>
           {brief.direction}
         </span>
-        <span style={{ fontFamily: FONT_MONO, fontSize: 9, color: C.muted, letterSpacing: "2px" }}>
+        <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.muted, letterSpacing: "2px" }}>
           {brief.strength}
         </span>
       </div>
       {brief.rationale && (
         <div style={{
-          fontFamily: FONT_MONO, fontSize: 9, color: C.muted, letterSpacing: "0.5px",
+          fontFamily: FONT_MONO, fontSize: 11, color: C.muted, letterSpacing: "0.5px",
           lineHeight: 1.45, marginBottom: 8,
           overflow: "hidden", textOverflow: "ellipsis",
           display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
@@ -1175,7 +1175,7 @@ function WeeklyBriefLiveWidget({ brief }: WeeklyBriefLiveWidgetProps) {
       <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: "auto" }}>
         {macros.map(([label, value, fmt]) => (
           <span key={label} style={{
-            fontFamily: FONT_MONO, fontSize: 9, letterSpacing: "1px",
+            fontFamily: FONT_MONO, fontSize: 11, letterSpacing: "1px",
             padding: "2px 6px", borderRadius: 3,
             color: value == null ? C.dim : C.text,
             background: C.bg, border: `1px solid ${C.border}`,

@@ -259,7 +259,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                     background: active ? "rgba(212,165,32,0.07)" : "transparent",
                     color: active ? "#d4a520" : "#666670",
                     fontFamily: "JetBrains Mono, monospace",
-                    fontSize: 11,
+                    fontSize: 13,
                     letterSpacing: "2px",
                     textDecoration: "none",
                     whiteSpace: "nowrap",
@@ -287,7 +287,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             />
             {!collapsed && (
               <div>
-                <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "2px", color: "#666670" }}>ALFRED</div>
+                <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 12, letterSpacing: "2px", color: "#666670" }}>ALFRED</div>
                 <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 8, color: dotColor }}>{alfredLabel}</div>
               </div>
             )}
@@ -302,7 +302,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               border: "none",
               cursor: "pointer",
               fontFamily: "JetBrains Mono, monospace",
-              fontSize: 9,
+              fontSize: 11,
               color: "#444450",
               letterSpacing: "1px",
               textAlign: "left",
@@ -342,20 +342,20 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             })()}
 
             <span style={{
-              fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "2px",
+              fontFamily: "JetBrains Mono, monospace", fontSize: 12, letterSpacing: "2px",
               padding: "3px 8px", borderRadius: 3,
               color: session.color, background: `${session.color}18`,
               border: `1px solid ${session.color}40`,
             }}>{session.label}</span>
 
             <span style={{
-              fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "1px",
+              fontFamily: "JetBrains Mono, monospace", fontSize: 12, letterSpacing: "1px",
               padding: "3px 8px", borderRadius: 3,
               color: "#666670", background: "#66667018", border: "1px solid #66667040",
             }}>OVX {ovxPrice != null ? ovxPrice.toFixed(1) : "—"}</span>
 
             <span style={{
-              fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "1px",
+              fontFamily: "JetBrains Mono, monospace", fontSize: 12, letterSpacing: "1px",
               padding: "3px 8px", borderRadius: 3,
               color: nyCountdown.color,
               background: `${nyCountdown.color}18`,
@@ -369,7 +369,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               if (!geoFlag || !geoFlag.chip_state || geoFlag.error) {
                 return (
                   <span style={{
-                    fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "2px",
+                    fontFamily: "JetBrains Mono, monospace", fontSize: 11, letterSpacing: "2px",
                     padding: "3px 8px", borderRadius: 3,
                     color: "#444450", background: "transparent", border: "1px solid #2a2a2e",
                   }}>GEO · —</span>
@@ -378,7 +378,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               if (geoFlag.chip_state === "CLEAR") {
                 return (
                   <span style={{
-                    fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "2px",
+                    fontFamily: "JetBrains Mono, monospace", fontSize: 11, letterSpacing: "2px",
                     padding: "3px 8px", borderRadius: 3,
                     color: "#666670", background: "#66667018", border: "1px solid #66667040",
                   }}>GEO · CLEAR</span>
@@ -393,7 +393,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                     onClick={() => setGeoExpanded((v) => !v)}
                     title="CL is moving since the flagged post — soft pause"
                     style={{
-                      fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "2px",
+                      fontFamily: "JetBrains Mono, monospace", fontSize: 11, letterSpacing: "2px",
                       padding: "3px 8px", borderRadius: 3, cursor: "pointer",
                       color: "#ef4444", background: "#ef444418", border: "1px solid #ef444440",
                       fontWeight: 700,
@@ -405,7 +405,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <span
                   onClick={() => setGeoExpanded((v) => !v)}
                   style={{
-                    fontFamily: "JetBrains Mono, monospace", fontSize: 9, letterSpacing: "2px",
+                    fontFamily: "JetBrains Mono, monospace", fontSize: 11, letterSpacing: "2px",
                     padding: "3px 8px", borderRadius: 3, cursor: "pointer",
                     color: "#d4a520", background: "#d4a52018", border: "1px solid #d4a52040",
                   }}
@@ -414,7 +414,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             })()}
 
             <span style={{
-              fontFamily: "JetBrains Mono, monospace", fontSize: 11, marginLeft: "auto",
+              fontFamily: "JetBrains Mono, monospace", fontSize: 13, marginLeft: "auto",
               color: eia.isActive ? "#ef4444" : "#666670",
             }}>
               EIA: {eia.isActive ? "⚠ ACTIVE" : `${eia.hours}h ${eia.mins}m`}
@@ -445,17 +445,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 background: bg,
                 borderBottom: `1px solid ${borderCol}`,
                 padding: "10px 24px", flexShrink: 0,
-                fontFamily: "JetBrains Mono, monospace", fontSize: 11,
+                fontFamily: "JetBrains Mono, monospace", fontSize: 13,
                 color: "#e0e0e0", letterSpacing: "1px",
                 display: "flex", alignItems: "center", gap: 12,
               }}>
-                <span style={{ color: accent, fontSize: 10, letterSpacing: "2px", flexShrink: 0 }}>
+                <span style={{ color: accent, fontSize: 12, letterSpacing: "2px", flexShrink: 0 }}>
                   {isHot ? "🔴 TRUTH POST" : "⚡ TRUTH POST"}
                 </span>
-                <span style={{ flex: 1, color: "#888", fontSize: 11, letterSpacing: 0 }}>
+                <span style={{ flex: 1, color: "#888", fontSize: 13, letterSpacing: 0 }}>
                   {excerpt}
                 </span>
-                <span style={{ color: deltaColor, fontSize: 10, letterSpacing: "1px", flexShrink: 0 }}>
+                <span style={{ color: deltaColor, fontSize: 12, letterSpacing: "1px", flexShrink: 0 }}>
                   {deltaText}
                 </span>
                 {geoFlag.post_url && (
@@ -464,7 +464,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                     target="_blank"
                     rel="noopener noreferrer"
                     style={{
-                      color: accent, fontSize: 9, letterSpacing: "2px",
+                      color: accent, fontSize: 11, letterSpacing: "2px",
                       textDecoration: "none", padding: "3px 8px",
                       border: `1px solid ${accent}40`, borderRadius: 3,
                     }}
@@ -489,7 +489,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 ? "1px solid rgba(239,68,68,0.35)"
                 : "1px solid rgba(212,165,32,0.35)",
               padding: "8px 24px", flexShrink: 0,
-              fontFamily: "JetBrains Mono, monospace", fontSize: 11,
+              fontFamily: "JetBrains Mono, monospace", fontSize: 13,
               color: alfredStatus === "FALLBACK" ? "#ef4444" : "#d4a520",
               letterSpacing: "1px",
             }}>
@@ -512,7 +512,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             padding: "8px 24px",
             borderTop: "1px solid #2a2a2e",
             fontFamily: "JetBrains Mono, monospace",
-            fontSize: 9, letterSpacing: "1px",
+            fontSize: 11, letterSpacing: "1px",
             color: "#444450", flexShrink: 0,
           }}>
             CRUDE INTENTIONS is a personal research tool. Nothing here constitutes financial advice. All trading decisions are yours alone.
