@@ -1211,7 +1211,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     let cancelled = false;
-    const apiKey = process.env.NEXT_PUBLIC_INTERNAL_API_KEY ?? "ci-internal-2026";
+    const apiKey = process.env.NEXT_PUBLIC_INTERNAL_API_KEY ?? "";
     const headers = { "x-api-key": apiKey };
 
     const loadAll = async () => {
