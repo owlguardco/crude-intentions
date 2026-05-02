@@ -40,8 +40,8 @@ function buildWstkUrl(): string {
 }
 function buildCushingUrl(): string {
   return (
-    `https://api.eia.gov/v2/petroleum/stoc/cushing/data/?api_key=${process.env.EIA_API_KEY ?? 'DEMO_KEY'}` +
-    `&frequency=weekly&data[0]=value&sort[0][column]=period&sort[0][direction]=desc&length=5`
+    `https://api.eia.gov/v2/petroleum/sum/sndw/data/?api_key=${process.env.EIA_API_KEY ?? 'DEMO_KEY'}` +
+    `&frequency=weekly&data[0]=value&facets[series][]=WCSSTUS1&sort[0][column]=period&sort[0][direction]=desc&length=5`
   );
 }
 
