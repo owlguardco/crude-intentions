@@ -39,11 +39,13 @@ interface PatchIdeaBody {
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   if (!isAuthorised(req)) {
     return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
   }
+
+  const { id } = await params;
 
   let body: PatchIdeaBody;
   try {
@@ -61,7 +63,7 @@ export async function PATCH(
 
   try {
     const ctx = await readContext(kv);
-    const idx = ctx.active_trade_ideas.findIndex((i) => i.id === params.id);
+    const idx = ctx.active_trade_ideas.findIndex((i) => i.id === id);
     if (idx === -1) {
       return NextResponse.json({ error: "Idea not found" }, { status: 404 });
     }
@@ -93,22 +95,24 @@ export async function PATCH(
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   if (!isAuthorised(req)) {
     return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
   }
 
+  const { id } = await params;
+
   try {
     const ctx = await readContext(kv);
-    const exists = ctx.active_trade_ideas.some((i) => i.id === params.id);
+    const exists = ctx.active_trade_ideas.some((i) => i.id === id);
     if (!exists) {
       return NextResponse.json({ error: "Idea not found" }, { status: 404 });
     }
 
     const next = {
       ...ctx,
-      active_trade_ideas: ctx.active_trade_ideas.filter((i) => i.id !== params.id),
+      active_trade_ideas: ctx.active_trade_ideas.filter((i) => i.id !== id),
     };
     await writeContext(kv, next);
 

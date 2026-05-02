@@ -38,11 +38,13 @@ interface PatchFvgBody {
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   if (!isAuthorised(req)) {
     return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
   }
+
+  const { id } = await params;
 
   let body: PatchFvgBody;
   try {
@@ -60,7 +62,7 @@ export async function PATCH(
 
   try {
     const ctx = await readContext(kv);
-    const idx = ctx.active_fvgs.findIndex((f) => f.id === params.id);
+    const idx = ctx.active_fvgs.findIndex((f) => f.id === id);
     if (idx === -1) {
       return NextResponse.json({ error: "FVG not found" }, { status: 404 });
     }
@@ -88,22 +90,24 @@ export async function PATCH(
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   if (!isAuthorised(req)) {
     return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
   }
 
+  const { id } = await params;
+
   try {
     const ctx = await readContext(kv);
-    const exists = ctx.active_fvgs.some((f) => f.id === params.id);
+    const exists = ctx.active_fvgs.some((f) => f.id === id);
     if (!exists) {
       return NextResponse.json({ error: "FVG not found" }, { status: 404 });
     }
 
     const next = {
       ...ctx,
-      active_fvgs: ctx.active_fvgs.filter((f) => f.id !== params.id),
+      active_fvgs: ctx.active_fvgs.filter((f) => f.id !== id),
     };
     await writeContext(kv, next);
 
