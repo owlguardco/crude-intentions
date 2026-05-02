@@ -627,10 +627,12 @@ function GeoWidget({ geo, onClick }: GeoWidgetProps) {
       })()}
       {/* Source label only surfaces when a post is actively flagged —
           CLEAR state stays neutral so the widget reads as a generic
-          geopolitical monitor rather than a Trump-specific watcher. */}
-      {flagged && geo?.source === "truth_social" && (
+          geopolitical monitor. The label is now a dynamic dot-joined
+          list of feeds that returned data this poll (e.g. "Truth Social
+          · Reuters · OPEC"), so the widget is no longer Trump-specific. */}
+      {flagged && geo?.source && (
         <div style={{ fontFamily: FONT_MONO, fontSize: 11, letterSpacing: "2px", color: C.dim }}>
-          TRUTH SOCIAL · @realDonaldTrump
+          {geo.source.toUpperCase()}
         </div>
       )}
       <style>{`@keyframes geo-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(1.2); } }`}</style>

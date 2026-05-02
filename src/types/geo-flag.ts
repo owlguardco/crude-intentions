@@ -22,11 +22,13 @@ export interface GeoFlagResult {
   post_title: string | null;
   post_url: string | null;
   /**
-   * Source feed identifier — present only when flagged. CLEAR state hides
-   * this so the widget reads as a generic geopolitical monitor instead of
-   * a Trump-specific watcher.
+   * Human-readable label of the feeds that returned data this poll —
+   * dot-joined when more than one fired, e.g. "Truth Social · Reuters
+   * · OPEC". Null only when every feed failed. The widget uses this to
+   * surface which sources contributed; it's not a strict enum so the
+   * type can absorb future feed additions without touching consumers.
    */
-  source: 'truth_social' | null;
+  source: string | null;
   checked_at: string;
   chip_state: GeoChipState;
   /**
